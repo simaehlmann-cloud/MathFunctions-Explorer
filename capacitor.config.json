@@ -1,0 +1,11 @@
+{
+  "appId": "de.example.mathfunctions",
+  "appName": "MathFunctions Explorer",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

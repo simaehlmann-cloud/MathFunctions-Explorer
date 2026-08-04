@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<!--
+  Strikte Content-Security-Policy.
+  connect-src 'self' erlaubt dem Service Worker, die eigenen Dateien
+  nachzuladen - und sonst nichts. Keine fremde Domain ist erreichbar.
+  Wird spaeter eine Lizenzpruefung eingebaut (siehe js/licence.js), muss hier
+  genau eine Domain ergaenzt werden; das ist dann der einzige ausgehende
+  Verbindungspunkt der App und gehoert in die Datenschutzerklaerung.
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:;
+               connect-src 'self'; manifest-src 'self'; worker-src 'self';
+               base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+<!-- Fuer die Lite-Ausgabe: manifest-lite.webmanifest verlinken und die
+     icon-lite-*.png verwenden (siehe README, Abschnitt "Lite und Pro"). -->
+<meta name="description" content="Interaktiver Funktionenplotter fuer den Mathematikunterricht. Laeuft vollstaendig lokal im Browser.">
+<title>MathFunctions Explorer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <button id="btn-home" class="brand" type="button" data-i18n-aria="a11y.home">
+    <span class="brand-mark" aria-hidden="true">f(x)</span>
+    <span class="brand-text">MathFunctions Explorer</span>
+  </button>
+
+  <div class="header-controls">
+    <button id="btn-undo" class="icon-btn" type="button" data-i18n-title="btn.undo" data-i18n-aria="btn.undo">↶</button>
+    <button id="btn-redo" class="icon-btn" type="button" data-i18n-title="btn.redo" data-i18n-aria="btn.redo">↷</button>
+    <button id="btn-theme" class="icon-btn" type="button" data-i18n-title="a11y.theme" data-i18n-aria="a11y.theme">
+      <span class="icon-sun" aria-hidden="true">☀</span><span class="icon-moon" aria-hidden="true">☾</span>
+    </button>
+    <div class="lang-switch" role="group" data-i18n-aria="a11y.lang">
+      <button id="btn-lang-de" class="flag-btn is-active" type="button" lang="de" title="Deutsch" aria-pressed="true">
+        <svg viewBox="0 0 5 3" width="26" height="16" aria-hidden="true" focusable="false">
+          <rect width="5" height="3" fill="#000"/><rect width="5" height="2" y="1" fill="#D00"/><rect width="5" height="1" y="2" fill="#FFCE00"/>
+        </svg><span class="flag-code">DE</span>
+      </button>
+      <button id="btn-lang-en" class="flag-btn" type="button" lang="en" title="English" aria-pressed="false">
+        <svg viewBox="0 0 60 30" width="26" height="16" aria-hidden="true" focusable="false">
+          <clipPath id="uk-c"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
+          <g clip-path="url(#uk-c)">
+            <path d="M0,0 v30 h60 v-30 z" fill="#012169"/>
+            <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/>
+            <path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="4"/>
+            <path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/>
+            <path d="M30,0 v30 M0,15 h60" stroke="#C8102E" stroke-width="6"/>
+          </g>
+        </svg><span class="flag-code">EN</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ====================== STARTSEITE ====================== -->
+<main id="screen-home" class="screen is-active">
+  <div class="home-inner">
+    <p class="eyebrow" data-i18n="home.eyebrow">Klasse 7 bis 11</p>
+    <h1 class="home-title" data-i18n="home.title">Welche Funktion willst du untersuchen?</h1>
+
+    <div class="fn-grid">
+      <button class="fn-card" type="button" data-category="linear">
+        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 55 L95 8"/></svg>
+        <span class="fn-name" data-i18n="cat.linear">Lineare Funktionen</span>
+        <span class="fn-form">f(x) = m·x + b</span>
+      </button>
+      <button class="fn-card" type="button" data-category="quadratic">
+        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M8 5 Q50 82 92 5"/></svg>
+        <span class="fn-name" data-i18n="cat.quadratic">Quadratische Funktionen</span>
+        <span class="fn-form">f(x) = a·x² + b·x + c</span>
+      </button>
+      <button class="fn-card" type="button" data-category="exponential">
+        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 56 Q60 54 95 4"/></svg>
+        <span class="fn-name" data-i18n="cat.exponential">Exponentialfunktionen</span>
+        <span class="fn-form">f(x) = a·b^x + c</span>
+      </button>
+      <button class="fn-card" type="button" data-category="trig">
+        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 30 Q17 -8 30 30 T55 30 T80 30 T105 30"/></svg>
+        <span class="fn-name" data-i18n="cat.trig">Trigonometrische Funktionen</span>
+        <span class="fn-form">f(x) = a·sin(b·(x − c)) + d</span>
+      </button>
+    </div>
+
+    <p class="home-note" data-i18n="home.privacy">Laeuft vollstaendig auf deinem Geraet. Keine Anmeldung, keine Datenuebertragung.</p>
+  </div>
+</main>
+
+<!-- ====================== APP ====================== -->
+<div id="screen-app" class="screen">
+
+  <nav class="tabs" role="tablist" data-i18n-aria="a11y.tabs">
+    <button class="tab-btn is-active" role="tab" id="tab-btn-explorer" aria-controls="tab-explorer"
+            aria-selected="true" data-tab="explorer" data-i18n="tab.explorer">Explorer</button>
+    <button class="tab-btn" role="tab" id="tab-btn-table" tabindex="-1" aria-controls="tab-table"
+            aria-selected="false" data-tab="table" data-i18n="tab.table">Wertetabelle</button>
+    <button class="tab-btn" role="tab" id="tab-btn-quiz" tabindex="-1" aria-controls="tab-quiz"
+            aria-selected="false" data-tab="quiz" data-i18n="tab.quiz">Ueben</button>
+  </nav>
+
+  <!-- ---------- EXPLORER ---------- -->
+  <section id="tab-explorer" class="tab-panel is-active" role="tabpanel" aria-labelledby="tab-btn-explorer">
+
+    <div class="canvas-panel">
+      <div class="canvas-stage">
+        <canvas id="graph-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.canvas"></canvas>
+        <output id="readout" class="readout" aria-live="polite"></output>
+      </div>
+
+      <div class="canvas-toolbar">
+        <label class="chip"><input type="checkbox" id="opt-helpers" checked><span data-i18n="opt.helpers">Hilfslinien</span></label>
+        <label class="chip"><input type="checkbox" id="opt-roots"><span data-i18n="opt.roots">Nullstellen</span></label>
+        <label class="chip"><input type="checkbox" id="opt-yint"><span data-i18n="opt.yint">y-Achsenabschnitt</span></label>
+        <label class="chip"><input type="checkbox" id="opt-vertex"><span data-i18n="opt.vertex">Scheitelpunkt</span></label>
+        <label class="chip"><input type="checkbox" id="opt-intersections"><span data-i18n="opt.intersections">Schnittpunkte</span></label>
+        <label class="chip"><input type="checkbox" id="opt-drag"><span data-i18n="opt.drag">Graph anfassen</span></label>
+      </div>
+    </div>
+
+    <div class="controls-panel">
+      <!-- Kurvenauswahl: f(x), optional g(x) -->
+      <div id="curve-switch" class="curve-switch" data-i18n-aria="a11y.curves"></div>
+
+      <div class="form-row">
+        <label for="function-form" data-i18n="lbl.form">Darstellungsform</label>
+        <select id="function-form"></select>
+      </div>
+
+      <div class="equation-card">
+        <div id="equations" class="equations"></div>
+        <p class="hint" data-i18n="hint.params">Tippe auf einen Parameter, um Buchstabe und Bedeutung zu aendern.</p>
+      </div>
+
+      <div id="parameters-container" class="sliders"></div>
+      <p class="hint" data-i18n="hint.numbers">Komma und Punkt gehen beide. Auch 3/4 oder pi/2.</p>
+
+      <button id="btn-transform" class="btn-ghost" type="button" hidden data-i18n="btn.transform">Transformation abspielen</button>
+
+      <details class="panel-section">
+        <summary data-i18n="lbl.scale">Achsen und Ansicht</summary>
+        <div class="slider-row">
+          <label for="scale-x">x: ±<span id="val-scale-x">10</span></label>
+          <input type="range" id="scale-x" min="1" max="50" step="1" value="10">
+        </div>
+        <div class="slider-row">
+          <label for="scale-y">y: ±<span id="val-scale-y">10</span></label>
+          <input type="range" id="scale-y" min="1" max="50" step="1" value="10">
+        </div>
+        <label class="chip"><input type="checkbox" id="opt-piAxis"><span data-i18n="opt.piAxis">x-Achse in π</span></label>
+        <button id="btn-reset-view" class="btn-ghost" type="button" data-i18n="btn.resetView">Ansicht zuruecksetzen</button>
+      </details>
+
+      <div class="action-row">
+        <button id="btn-export" class="btn-secondary" type="button" data-i18n="btn.export">Als Bild speichern</button>
+        <button id="btn-share" class="btn-secondary" type="button" data-i18n="btn.share">Link kopieren</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- WERTETABELLE ---------- -->
+  <section id="tab-table" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-table">
+    <div class="table-controls">
+      <div class="form-row"><label for="tbl-start" data-i18n="lbl.start">Startwert x</label>
+        <input type="text" inputmode="decimal" autocomplete="off" id="tbl-start" value="-5"></div>
+      <div class="form-row"><label for="tbl-end" data-i18n="lbl.end">Endwert x</label>
+        <input type="text" inputmode="decimal" autocomplete="off" id="tbl-end" value="5"></div>
+      <div class="form-row"><label for="tbl-step" data-i18n="lbl.step">Schrittweite</label>
+        <input type="text" inputmode="decimal" autocomplete="off" id="tbl-step" value="1"></div>
+      <button id="btn-gen-table" class="btn-primary" type="button" data-i18n="btn.calcTable">Tabelle berechnen</button>
+    </div>
+    <p class="hint" data-i18n="hint.numbers">Komma und Punkt gehen beide. Auch 3/4 oder pi/2.</p>
+    <p id="table-msg" class="msg" role="status"></p>
+    <div class="table-wrapper">
+      <table id="values-table"><thead><tr></tr></thead><tbody></tbody></table>
+    </div>
+    <button id="btn-copy-table" class="btn-secondary" type="button" data-i18n="btn.copyTable">Tabelle kopieren</button>
+  </section>
+
+  <!-- ---------- UEBEN ---------- -->
+  <section id="tab-quiz" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-quiz">
+
+    <div id="quiz-modes" class="segmented" role="group">
+      <button class="seg-btn is-active" type="button" data-mode="match" aria-pressed="true" data-i18n="quiz.mode.match">Zuordnen</button>
+      <button class="seg-btn" type="button" data-mode="build" aria-pressed="false" data-i18n="quiz.mode.build">Nachbauen</button>
+    </div>
+
+    <!-- Modus 1: Gleichung dem Graphen zuordnen -->
+    <div id="mode-match">
+      <div class="quiz-head">
+        <h2 data-i18n="quiz.title">Welche Gleichung gehoert zum Graphen?</h2>
+        <p class="quiz-score"><span data-i18n="quiz.score">Punkte</span>:
+          <strong id="quiz-score">0</strong> / <span id="quiz-total">0</span></p>
+      </div>
+      <div class="quiz-body">
+        <canvas id="quiz-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+        <div>
+          <div id="quiz-options" class="options-grid"></div>
+          <p id="quiz-feedback" class="feedback" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="action-row">
+        <button id="btn-next-quiz" class="btn-primary" type="button" data-i18n="btn.nextQuiz">Naechste Aufgabe</button>
+        <button id="btn-own-quiz" class="btn-secondary" type="button" data-i18n="btn.ownQuiz">Aufgabe aus Explorer erstellen</button>
+      </div>
+    </div>
+
+    <!-- Modus 2: vorgegebenen Graphen mit den Reglern nachbauen -->
+    <div id="mode-build" hidden>
+      <div class="quiz-head">
+        <h2 data-i18n="build.title">Stelle die Regler so ein, dass dein Graph den grauen trifft.</h2>
+      </div>
+      <div class="quiz-body">
+        <canvas id="practice-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.practiceCanvas"></canvas>
+        <div>
+          <div id="practice-params" class="sliders"></div>
+          <p id="practice-feedback" class="feedback" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="action-row">
+        <button id="btn-check" class="btn-primary" type="button" data-i18n="btn.check">Pruefen</button>
+        <button id="btn-new-task" class="btn-secondary" type="button" data-i18n="btn.newTask">Neue Aufgabe</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ====================== PARAMETER-DIALOG ====================== -->
+<!-- Natives <dialog>: Fokus-Trap, ESC und Backdrop kommen vom Browser. -->
+<dialog id="param-dialog" class="dialog">
+  <form method="dialog" class="dialog-inner">
+    <h3 id="dialog-title">Parameter</h3>
+    <div class="form-row">
+      <label for="dialog-symbol" data-i18n="lbl.symbol">Buchstabe (wie in deinem Schulbuch)</label>
+      <input type="text" id="dialog-symbol" maxlength="3" autocomplete="off" required>
+      <p id="dialog-symbol-error" class="msg msg-error" hidden data-i18n="err.symbol">Erlaubt ist ein Buchstabe, optional mit Ziffer (z. B. x1).</p>
+    </div>
+    <div class="info-box">
+      <h4 data-i18n="lbl.meaning">Bedeutung</h4>
+      <p id="dialog-description"></p>
+      <p id="dialog-example" class="dialog-example"></p>
+    </div>
+    <menu class="dialog-actions">
+      <button value="cancel" class="btn-ghost" type="submit" formnovalidate data-i18n="btn.cancel">Abbrechen</button>
+      <button value="save" id="dialog-save" class="btn-primary" type="submit" data-i18n="btn.save">Speichern</button>
+    </menu>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="js/licence.js"></script>
+<script src="js/billing.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/functions.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

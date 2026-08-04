@@ -1,0 +1,417 @@
+/* ==========================================================================
+   MathFunctions Explorer - Stylesheet
+   FIX: Alle Farben leben ausschliesslich hier. app.js liest sie zur Laufzeit
+   ueber getComputedStyle aus (siehe readCssVar) - vorher waren Hex-Werte in
+   CSS UND JS doppelt gepflegt und konnten auseinanderlaufen.
+   ========================================================================== */
+
+:root {
+  /* Parameterfarben. FIX (Barrierefreiheit): p1/p2 waren Blau/Rot - genau die
+     Rot-Gruen-Achse. Jetzt Blau / Magenta / Teal / Amber: auch bei
+     Deuteranopie und Protanopie unterscheidbar. Zusaetzlich traegt jeder
+     Parameter eine eigene Unterstreichung (durchgezogen/gepunktet/...),
+     damit Farbe nie der einzige Traeger der Information ist. */
+  --p1: #2563eb;
+  --p2: #c026d3;
+  --p3: #0d9488;
+  --p4: #b45309;
+  --graph: #7c3aed;      /* f(x) */
+  --graph2: #0891b2;     /* g(x) */
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --tap: 44px;              /* Mindestgroesse fuer Touch-Ziele */
+  --ff-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ff-math: "Latin Modern Math", "Cambria Math", Cambria, Georgia, serif;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 8px 24px rgba(15, 23, 42, .06);
+}
+
+:root, :root[data-theme="light"] {
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #dbe2ea;
+  --accent: #2563eb;
+  --on-accent: #ffffff;
+  --grid: #e2e8f0;
+  --grid-strong: #cbd5e1;
+  --axis: #334155;
+  --ok-bg: #dcfce7; --ok-text: #14532d;
+  --err-bg: #fee2e2; --err-text: #7f1d1d;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b1220;
+  --surface: #17223a;
+  --surface-2: #101a2e;
+  --text: #e8eefc;
+  --muted: #9aa8c4;
+  --border: #2a3550;
+  --accent: #60a5fa;
+  --on-accent: #06152e;
+  --grid: #24314d;
+  --grid-strong: #35456a;
+  --axis: #cbd5e1;
+  --p1: #60a5fa; --p2: #e879f9; --p3: #2dd4bf; --p4: #fbbf24;
+  --graph: #a78bfa; --graph2: #22d3ee;
+  --ok-bg: #14532d; --ok-text: #bbf7d0;
+  --err-bg: #7f1d1d; --err-text: #fecaca;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body, h1, h2, h3, h4, p, figure, menu { margin: 0; padding: 0; }
+menu { list-style: none; }
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--ff-ui);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  line-height: 1.5;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Sichtbarer Fokus fuer Tastaturnutzung (Pflicht, fehlte komplett) */
+:where(button, input, select, summary, a):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- Header ---------- */
+.app-header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem clamp(.75rem, 3vw, 2rem);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: .6rem; background: none; border: 0; cursor: pointer; color: inherit; padding: .25rem; }
+.brand-mark { font-family: var(--ff-math); font-style: italic; font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+.brand-text { font-weight: 650; letter-spacing: -.01em; font-size: 1rem; }
+@media (max-width: 480px) { .brand-text { display: none; } }
+
+.header-controls { display: flex; align-items: center; gap: .5rem; }
+.icon-btn {
+  min-width: var(--tap); min-height: var(--tap);
+  display: grid; place-items: center;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: var(--text); font-size: 1.15rem; cursor: pointer;
+}
+.icon-btn:hover { background: var(--surface-2); border-color: var(--border); }
+:root[data-theme="light"] .icon-moon, :root[data-theme="dark"] .icon-sun { display: none; }
+
+.lang-switch { display: flex; gap: .25rem; }
+.flag-btn {
+  display: flex; align-items: center; gap: .35rem;
+  min-height: var(--tap); padding: 0 .5rem;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; font: inherit; font-size: .8rem; font-weight: 700;
+}
+.flag-btn svg { border-radius: 2px; display: block; }
+.flag-btn.is-active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.flag-btn:not(.is-active) svg { opacity: .55; }
+@media (max-width: 380px) { .flag-code { display: none; } }
+
+/* ---------- Screens ---------- */
+.screen { display: none; }
+.screen.is-active { display: block; }
+
+/* ---------- Startseite ---------- */
+.home-inner { max-width: 60rem; margin: 0 auto; padding: clamp(1.5rem, 5vw, 3.5rem) 1rem 3rem; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; font-weight: 700; color: var(--muted); }
+.home-title { font-size: clamp(1.5rem, 5vw, 2.25rem); line-height: 1.15; letter-spacing: -.02em; margin: .4rem 0 1.75rem; }
+
+.fn-grid { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.fn-card {
+  display: grid; gap: .35rem; justify-items: start; text-align: left;
+  padding: 1.1rem; cursor: pointer; font: inherit; color: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: transform .15s ease, border-color .15s ease;
+}
+.fn-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.fn-thumb { width: 100%; height: 58px; fill: none; stroke: var(--graph); stroke-width: 4; stroke-linecap: round; }
+.fn-name { font-weight: 650; }
+.fn-form { font-family: var(--ff-math); font-style: italic; color: var(--muted); font-size: .95rem; }
+.home-note { margin-top: 2rem; color: var(--muted); font-size: .85rem; }
+
+/* ---------- Tabs ---------- */
+.tabs {
+  display: flex; gap: .25rem; overflow-x: auto;
+  padding: 0 clamp(.5rem, 3vw, 2rem);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  flex: 0 0 auto; min-height: var(--tap); padding: 0 1.1rem;
+  background: none; border: 0; border-bottom: 3px solid transparent;
+  color: var(--muted); font: inherit; font-weight: 650; cursor: pointer; white-space: nowrap;
+}
+.tab-btn.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-panel { display: none; padding: clamp(.75rem, 3vw, 1.5rem); }
+.tab-panel.is-active { display: block; }
+
+/* ---------- Explorer-Layout (Mobile First) ----------
+   Mobil: Canvas oben (klebt beim Scrollen), Regler darunter im Daumenbereich.
+   Ab 900px: klassisches Zwei-Spalten-Layout. */
+#tab-explorer.is-active { display: flex; flex-direction: column; gap: 1rem; }
+.canvas-panel { display: flex; flex-direction: column; gap: .6rem; }
+.canvas-stage { position: relative; }
+
+.graph-canvas {
+  display: block; width: 100%;
+  height: clamp(240px, 42vh, 520px);
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  touch-action: pan-y;             /* Seite bleibt scrollbar ... */
+}
+.graph-canvas.is-draggable { touch-action: none; cursor: grab; }  /* ... ausser im Anfass-Modus */
+.graph-canvas.is-dragging { cursor: grabbing; }
+
+.readout {
+  position: absolute; left: .5rem; bottom: .5rem;
+  padding: .3rem .55rem; border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  font-family: var(--ff-math); font-size: .85rem; pointer-events: none;
+}
+.readout:empty { display: none; }
+
+.canvas-toolbar { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: .4rem;
+  min-height: 38px; padding: 0 .7rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.chip:has(:checked) { border-color: var(--accent); color: var(--accent); }
+.chip input { accent-color: var(--accent); width: 1rem; height: 1rem; }
+
+.controls-panel {
+  display: flex; flex-direction: column; gap: 1rem;
+  padding: 1rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+
+@media (min-width: 900px) {
+  #tab-explorer.is-active { display: grid; grid-template-columns: 360px minmax(0, 1fr); align-items: start; }
+  .controls-panel { order: -1; position: sticky; top: 5rem; }
+}
+
+/* ---------- Formularelemente ---------- */
+.form-row { display: grid; gap: .3rem; }
+.form-row label, .panel-section summary { font-weight: 650; font-size: .9rem; }
+select, input[type="number"], input[type="text"] {
+  width: 100%; min-height: var(--tap); padding: .5rem .65rem;
+  font: inherit; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+
+.panel-section { border-top: 1px solid var(--border); padding-top: .75rem; }
+.panel-section summary { cursor: pointer; min-height: 32px; }
+.panel-section[open] summary { margin-bottom: .75rem; }
+
+/* ---------- Gleichung ---------- */
+.equation-card { padding: 1rem .75rem; text-align: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.equation-display { font-family: var(--ff-math); font-size: clamp(1.15rem, 4.5vw, 1.4rem); font-weight: 600; letter-spacing: .01em; }
+.equation-small { font-size: 1.05rem; }
+.hint { margin-top: .5rem; font-family: var(--ff-ui); font-size: .78rem; color: var(--muted); }
+
+/* Parameter-Chips in der Formel: eigene Buttons => tastaturbedienbar */
+.param-chip {
+  font: inherit; font-weight: 800; font-style: italic;
+  background: none; border: 0; padding: 0 .15rem; cursor: pointer;
+  border-bottom: 3px solid currentColor;
+}
+.c1 { color: var(--p1); }
+.c2 { color: var(--p2); border-bottom-style: dotted; }
+.c3 { color: var(--p3); border-bottom-style: dashed; }
+.c4 { color: var(--p4); border-bottom-style: double; }
+
+/* ---------- Regler ---------- */
+.sliders { display: grid; gap: .9rem; }
+.slider-row { display: grid; gap: .3rem; }
+.slider-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-weight: 650; }
+.slider-head .sym { font-family: var(--ff-math); font-style: italic; font-size: 1.05rem; }
+
+/* Direkte Werteingabe neben dem Regler: erlaubt Werte, die die Schrittweite
+   des Reglers nicht trifft (1/3, pi/2) und Werte ausserhalb des Bereichs. */
+.value-input {
+  width: 6.5rem; min-height: 38px; padding: .25rem .5rem;
+  text-align: right; font-variant-numeric: tabular-nums;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font: inherit;
+}
+.value-input.is-invalid { border-color: var(--err-text); background: var(--err-bg); }
+.slider-track { display: flex; align-items: center; gap: .5rem; }
+
+input[type="range"] {
+  flex: 1; width: 100%; min-height: var(--tap);
+  accent-color: var(--accent); cursor: pointer; background: transparent;
+}
+.s1 { accent-color: var(--p1); } .s2 { accent-color: var(--p2); }
+.s3 { accent-color: var(--p3); } .s4 { accent-color: var(--p4); }
+
+.play-btn {
+  flex: 0 0 auto; width: 38px; height: 38px;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 50%; cursor: pointer; font-size: .8rem;
+}
+.play-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* ---------- Buttons ---------- */
+.btn-primary, .btn-secondary, .btn-ghost {
+  min-height: var(--tap); padding: .55rem 1rem;
+  font: inherit; font-weight: 650; cursor: pointer;
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-ghost { background: none; color: var(--muted); border-color: var(--border); }
+.btn-primary:hover, .btn-secondary:hover, .btn-ghost:hover { filter: brightness(.95); }
+.btn-primary:disabled, .btn-secondary:disabled { opacity: .5; cursor: not-allowed; }
+.action-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.action-row > * { flex: 1 1 12rem; }
+
+/* ---------- Tabelle ---------- */
+.table-head { margin-bottom: 1rem; text-align: center; }
+.table-controls { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; margin-bottom: .75rem; }
+.table-wrapper { max-height: 55vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: .75rem; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); }
+th, td { padding: .6rem; text-align: right; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+th { position: sticky; top: 0; background: var(--surface-2); font-family: var(--ff-math); font-style: italic; }
+tbody tr:nth-child(even) { background: var(--surface-2); }
+
+.msg { font-size: .85rem; color: var(--muted); margin: .25rem 0 .75rem; }
+.msg:empty { display: none; }
+.msg-error { color: var(--err-text); }
+
+/* ---------- Quiz ---------- */
+.quiz-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
+.quiz-head h2 { font-size: 1.15rem; }
+.quiz-score { color: var(--muted); font-size: .9rem; }
+.quiz-body { display: grid; gap: 1rem; margin-bottom: 1rem; }
+@media (min-width: 900px) { .quiz-body { grid-template-columns: 1fr 1fr; } }
+
+.options-grid { display: grid; gap: .6rem; }
+.quiz-opt {
+  min-height: var(--tap); padding: .8rem;
+  font-family: var(--ff-math); font-size: 1.05rem; text-align: left;
+  background: var(--surface); color: var(--text);
+  border: 2px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;
+}
+.quiz-opt:hover:not(:disabled) { border-color: var(--accent); }
+.quiz-opt.is-correct { background: var(--ok-bg); color: var(--ok-text); border-color: currentColor; }
+.quiz-opt.is-wrong { background: var(--err-bg); color: var(--err-text); border-color: currentColor; }
+.quiz-opt:disabled { cursor: default; }
+
+.feedback { margin-top: .75rem; padding: .75rem; border-radius: var(--radius-sm); font-weight: 600; }
+.feedback:empty { display: none; padding: 0; }
+.feedback.ok { background: var(--ok-bg); color: var(--ok-text); }
+.feedback.err { background: var(--err-bg); color: var(--err-text); }
+
+/* ---------- Dialog ---------- */
+.dialog { width: min(26rem, calc(100vw - 2rem)); padding: 0; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.dialog::backdrop { background: rgba(2, 6, 23, .55); }
+.dialog-inner { display: grid; gap: 1rem; padding: 1.5rem; }
+.dialog h3 { font-family: var(--ff-math); font-size: 1.2rem; }
+.info-box { padding: .8rem; background: var(--surface-2); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); }
+.info-box h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: .3rem; }
+.dialog-example { margin-top: .5rem; font-family: var(--ff-math); font-size: .9rem; color: var(--muted); }
+.dialog-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(1.25rem + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 50; padding: .65rem 1.1rem; border-radius: 999px;
+  background: var(--text); color: var(--bg); font-size: .88rem; font-weight: 600;
+  box-shadow: var(--shadow);
+}
+
+/* ---------- Pro-Gating ---------- */
+.is-locked { position: relative; opacity: .6; }
+.is-locked::after { content: "PRO"; margin-left: .4rem; font-size: .65rem; font-weight: 800; letter-spacing: .06em; padding: .1rem .3rem; border-radius: 4px; background: var(--p4); color: #fff; }
+
+/* Systemvorgabe respektieren */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  .fn-card:hover { transform: none; }
+}
+
+@media print {
+  .app-header, .tabs, .controls-panel, .canvas-toolbar, .action-row { display: none !important; }
+}
+
+
+/* ==========================================================================
+   Ergaenzungen v3: zwei Kurven, Uebungsmodi, Wertfelder
+   ========================================================================== */
+
+/* --- Kurvenauswahl f(x) / g(x) --- */
+.curve-switch { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.curve-chip {
+  --chip-color: var(--graph);
+  min-height: 38px; padding: 0 .9rem;
+  font: inherit; font-family: var(--ff-math); font-style: italic; font-weight: 700;
+  background: var(--surface); color: var(--text);
+  border: 2px solid var(--border); border-radius: 999px; cursor: pointer;
+}
+.curve-chip.is-active { border-color: var(--chip-color); color: var(--chip-color); }
+/* Farbpunkt, damit die Zuordnung Kurve <-> Graph nicht nur ueber die
+   Rahmenfarbe laeuft (Barrierefreiheit). */
+.curve-chip::before {
+  content: ""; display: inline-block; width: .6rem; height: .6rem; margin-right: .4rem;
+  border-radius: 50%; background: var(--chip-color); vertical-align: middle;
+}
+.curve-add {
+  min-height: 38px; padding: 0 .8rem; font: inherit; font-size: .85rem; font-weight: 650;
+  background: none; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 999px; cursor: pointer;
+}
+.curve-add:hover { color: var(--accent); border-color: var(--accent); }
+
+/* --- Gleichungen (eine Zeile pro Kurve) --- */
+.equations { display: grid; gap: .4rem; }
+.equations .equation-display {
+  padding: .25rem .4rem; border-radius: 6px; cursor: pointer; opacity: .55;
+}
+.equations .equation-display.is-active { opacity: 1; background: var(--surface); }
+.equations .equation-display:nth-child(1) { border-left: 4px solid var(--graph); }
+.equations .equation-display:nth-child(2) { border-left: 4px solid var(--graph2); }
+
+/* --- Werteingabe neben dem Regler --- */
+.value-input {
+  width: 6.5rem; min-height: 38px; padding: .25rem .5rem;
+  text-align: right; font-variant-numeric: tabular-nums;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font: inherit;
+}
+.value-input.is-invalid { border-color: var(--err-text); background: var(--err-bg); }
+
+/* --- Umschalter Zuordnen / Nachbauen --- */
+.segmented {
+  display: inline-flex; padding: .25rem; margin-bottom: 1rem;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.seg-btn {
+  min-height: 38px; padding: 0 1.1rem;
+  background: none; border: 0; border-radius: 999px;
+  font: inherit; font-weight: 650; color: var(--muted); cursor: pointer;
+}
+.seg-btn.is-active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
+
+#mode-build .sliders { margin-bottom: .75rem; }
+
+/* --- Kopfzeilen-Buttons im deaktivierten Zustand --- */
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.icon-btn:disabled:hover { background: none; border-color: transparent; }
+
+/* --- Achsen-Details im Aufklappbereich --- */
+.panel-section .chip { margin-bottom: .75rem; }

@@ -1,0 +1,23 @@
+{
+  "name": "mathfunctions-explorer",
+  "version": "3.0.0",
+  "description": "Interaktiver Funktionenplotter für den Mathematikunterricht",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build-www.mjs",
+    "build:lite": "node tools/build-www.mjs lite",
+    "icons": "python3 tools/make_icons.py",
+    "serve": "python3 -m http.server 8000",
+    "android:add": "npm run build && npx cap add android",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npm run android:sync && npx cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/android": "^6.2.0"
+  }
+}
