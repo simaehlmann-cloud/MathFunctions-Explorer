@@ -35,6 +35,13 @@ MFE.licence = (() => {
   const PRO_APP_ID = 'de.wisdompeak.mathfunctions';
   const STORE_URL  = 'https://play.google.com/store/apps/details?id=' + PRO_APP_ID;
 
+  /** Erst auf true setzen, wenn die Pro-Ausgabe im Play Store TATSAECHLICH
+   *  erreichbar ist. Solange sie es nicht ist, fuehrt jeder Klick auf
+   *  "Pro-Ausgabe ansehen" auf eine Fehlerseite von Google - und die Nutzerin
+   *  haelt die App fuer kaputt. Mit false sagt die App stattdessen ehrlich,
+   *  dass es die Pro-Ausgabe noch nicht gibt. */
+  const STORE_LIVE = false;
+
   /* Was die Lite-Ausgabe NICHT kann. Eine einzige Liste - wer hier etwas
      aendert, aendert es ueberall, weil die Oberflaeche ausschliesslich ueber
      has() fragt. */
@@ -100,6 +107,7 @@ MFE.licence = (() => {
    *  Absichtlich `noopener`: die Zielseite darf nicht auf window.opener
    *  zugreifen. */
   function openStore() {
+    if (!STORE_LIVE) return 'notyet';
     try {
       const w = window.open(STORE_URL, '_blank', 'noopener,noreferrer');
       if (w) return true;
@@ -118,6 +126,7 @@ MFE.licence = (() => {
     setEdition(v) { edition = v === 'pro' ? 'pro' : 'lite'; },
     verifyWithServer,
     openStore,
+    storeLive: () => STORE_LIVE,
     STORE_URL,
     PRO_APP_ID,
     PRO_FEATURES

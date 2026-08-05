@@ -33,6 +33,7 @@ let counter = 0;
 let current = { screen: 'home', tab: 'explorer' };
 let lastExitAttempt = 0;
 let started = false;
+let depth = 0;          // wie viele eigene Eintraege ueber der Startseite liegen
 
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 
@@ -54,7 +55,7 @@ function go(entry) {
     return;
   }
   const mark = { ...next, dialog: entry.dialog || null };
-  try { history.pushState(markOf(mark), '', here()); } catch { /* file:// */ }
+  try { history.pushState(markOf(mark), '', here()); depth++; } catch { /* file:// */ }
   current = next;
 }
 
@@ -70,7 +71,7 @@ function replace(entry) {
  *  Zurueck ihn schliesst statt den Bildschirm zu wechseln. */
 function openDialog(el) {
   if (!el?.showModal || el.open) return false;
-  try { history.pushState(markOf({ ...current, dialog: el.id }), '', here()); } catch {}
+  try { history.pushState(markOf({ ...current, dialog: el.id }), '', here()); depth++; } catch {}
   try { el.showModal(); } catch { return false; }
   // Schliesst der Nutzer den Dialog anders (ESC, Schaltflaeche), muss der
   // zusaetzliche Verlaufseintrag wieder weg - sonst braucht der naechste
@@ -87,6 +88,7 @@ function openDialogs() {
 
 function handlePop(e) {
   const mark = e.state?.[KEY];
+  if (depth > 0) depth--;
 
   // Ein offener Dialog wird zuerst geschlossen - und zwar nur der oberste.
   // Alle auf einmal zu schliessen wuerde die Verlaufseintraege der darunter
@@ -123,13 +125,20 @@ function guardExit() {
  *  wenigstens der Verlauf oben. */
 function bindNativeBack() {
   const App = window.Capacitor?.Plugins?.App;
-  if (!App?.addListener) return;
-  App.addListener('backButton', ({ canGoBack }) => {
-    if (openDialogs().length) { history.back(); return; }
-    if (canGoBack && current.screen !== 'home') { history.back(); return; }
-    if (current.screen !== 'home') { history.back(); return; }
+  if (!App?.addListener) {
+    // Ohne @capacitor/app gibt es kein backButton-Ereignis, und die WebView
+    // beendet die App beim ersten Druck. Genau daran ist die erste Fassung
+    // gescheitert: nav.js war fertig, das Plugin fehlte.
+    if (isNative()) console.warn('[nav] @capacitor/app fehlt - der Zurueck-Knopf beendet die App.');
+    return false;
+  }
+  App.addListener('backButton', () => {
+    // Nicht canGoBack der WebView auswerten: dort zaehlen auch Eintraege mit,
+    // die nicht von uns stammen. Massgeblich ist unsere eigene Tiefe.
+    if (openDialogs().length || depth > 0) { history.back(); return; }
     if (guardExit()) App.exitApp?.();
   });
+  return true;
 }
 
 function init(hooks) {
@@ -140,8 +149,13 @@ function init(hooks) {
   current = { screen: hooks.screen || 'home', tab: hooks.tab || 'explorer' };
   replace(current);
   addEventListener('popstate', handlePop);
-  bindNativeBack();
+  const bound = bindNativeBack();
+  // Auf Android kann das Plugin kurz nach dem Start bereitstehen.
+  if (!bound && isNative()) setTimeout(bindNativeBack, 500);
 }
 
-return { init, go, replace, openDialog, get current() { return { ...current }; }, isNative };
+return { init, go, replace, openDialog,
+         get current() { return { ...current }; },
+         get depth() { return depth; },
+         isNative };
 })();

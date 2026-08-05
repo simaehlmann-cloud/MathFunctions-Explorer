@@ -447,16 +447,36 @@ function renderCurveSwitcher() {
   box.append(add);
 }
 
+/**
+ * Die Auswahlliste fuehrt jetzt alle Funktionsklassen, nach Klasse gruppiert.
+ * Vorher zeigte sie nur die Darstellungsformen der aktuellen Klasse - um von
+ * einer Parabel zu einer Sinuskurve zu kommen, musste man zurueck zur
+ * Startseite. Gesperrte Klassen bleiben sichtbar und auswaehlbar; die Auswahl
+ * fuehrt dann zum Hinweis auf die Pro-Ausgabe statt sie stillschweigend zu
+ * verschlucken.
+ */
 function renderFormSelect() {
   const sel = $('#function-form');
-  const forms = CATEGORY_FORMS[def().category] ?? [curve().form];
   sel.replaceChildren();
-  for (const f of forms) {
-    const o = document.createElement('option');
-    o.value = f; o.textContent = t('form.' + f); o.selected = f === curve().form;
-    sel.append(o);
+
+  for (const [cat, forms] of Object.entries(CATEGORY_FORMS)) {
+    const allowed = licence.has('cat.' + cat);
+    const group = document.createElement('optgroup');
+    group.label = t('cat.' + cat) + (allowed ? '' : '  \u2013 PRO');
+    for (const f of forms) {
+      const o = document.createElement('option');
+      o.value = f;
+      // Bei Klassen mit nur einer Form waere die Gruppenzeile sonst
+      // doppelt beschriftet.
+      o.textContent = forms.length > 1 ? t('form.' + f) : t('cat.' + cat);
+      if (!allowed) o.textContent += '  \u2013 PRO';
+      o.selected = f === curve().form;
+      o.dataset.cat = cat;
+      group.append(o);
+    }
+    sel.append(group);
   }
-  sel.closest('.form-row').hidden = forms.length < 2;
+  sel.closest('.form-row').hidden = false;
   $('#btn-transform').hidden = !def().transform || !licence.has('transform');
 }
 
@@ -1294,6 +1314,34 @@ function markProFeatures() {
   });
 }
 
+/**
+ * Startseite sortieren: was in dieser Ausgabe nutzbar ist, kommt nach oben.
+ * In der Lite-Ausgabe sind sieben von neun Klassen gesperrt - ungeordnet
+ * scrollt man an lauter Gesperrtem vorbei, bevor etwas Anklickbares kommt.
+ * Die Reihenfolge innerhalb der beiden Gruppen bleibt die des HTML, damit
+ * die fachliche Ordnung (linear, quadratisch, ganzrational, ...) erhalten
+ * bleibt.
+ */
+function sortHomeCards() {
+  for (const grid of $$('.fn-grid')) {
+    const cards = Array.from(grid.children);
+    const open = cards.filter(c => !c.dataset.feature || licence.has(c.dataset.feature));
+    const locked = cards.filter(c => c.dataset.feature && !licence.has(c.dataset.feature));
+    if (!locked.length) continue;
+    grid.append(...open, ...locked);
+    // Trennlinie vor dem gesperrten Teil - sonst wirkt der Bruch willkuerlich.
+    let sep = grid.querySelector('.grid-sep');
+    if (!sep) {
+      sep = document.createElement('p');
+      sep.className = 'grid-sep';
+      grid.insertBefore(sep, locked[0]);
+    } else {
+      grid.insertBefore(sep, locked[0]);
+    }
+    sep.textContent = t('home.inPro');
+  }
+}
+
 /* ==========================================================================
    15 · INFO-BILDSCHIRM
    ========================================================================== */
@@ -1324,6 +1372,7 @@ function applyLanguage() {
   $('#btn-lang-en').setAttribute('aria-pressed', String(MFE.i18n.lang === 'en'));
   updateExplorer();
   renderInfo();
+  sortHomeCards();
   MFE.quiz.relabel();
   if (quiz.answer) renderQuizOptions();
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
@@ -1533,7 +1582,20 @@ function bindEvents() {
     stopPlay();
     const form = e.target.value;
     if (!FUNCTIONS[form]) return;
+    const cat = FUNCTIONS[form].category;
+    if (!licence.has('cat.' + cat)) {
+      // Auswahl zuruecknehmen, sonst zeigt die Liste eine Klasse an, die
+      // gar nicht geladen wurde.
+      e.target.value = curve().form;
+      proHint('cat');
+      return;
+    }
     ensureSymbols(form);
+    // Beim Wechsel der Klasse passt der bisherige Ausschnitt selten.
+    if (cat !== def().category) {
+      state.piAxis = !!FUNCTIONS[form].piAxis;
+      if (cat === 'trig') applyPresetSilently('trig');
+    }
     state.curves[state.active] = makeCurve(form);
     state.piAxis = !!FUNCTIONS[form].piAxis;
     syncOptionInputs();
@@ -1617,12 +1679,17 @@ function bindEvents() {
 
   $('#dialog-save').addEventListener('click', (e) => { if (!saveParamDialog()) e.preventDefault(); });
 
+  // Drei Faelle, drei Meldungen: noch nicht veroeffentlicht, Oeffnen
+  // gescheitert, oder es hat geklappt. Frueher gab es nur "ging nicht".
+  const toStore = () => {
+    const r = licence.openStore();
+    if (r === 'notyet') toast(t('msg.storeNotYet'));
+    else if (!r) toast(t('msg.storeFail'));
+  };
   $('#pro-dialog').addEventListener('close', (e) => {
-    if (e.target.returnValue === 'store' && !licence.openStore()) toast(t('msg.storeFail'));
+    if (e.target.returnValue === 'store') toStore();
   });
-  $('#btn-info-store').addEventListener('click', () => {
-    if (!licence.openStore()) toast(t('msg.storeFail'));
-  });
+  $('#btn-info-store').addEventListener('click', toStore);
 
   $('#btn-gen-table').addEventListener('click', generateTable);
   $('#btn-copy-table').addEventListener('click', copyTable);
@@ -1684,6 +1751,7 @@ function bindEvents() {
 
   addEventListener('mfe:licence-changed', () => {
     markProFeatures();
+    sortHomeCards();
     updateExplorer();
     renderInfo();
     toast(t('msg.proUnlocked'));
@@ -1695,6 +1763,11 @@ function bindEvents() {
    ========================================================================== */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+  // In der installierten App ist der Service Worker sinnlos: die Dateien
+  // liegen ohnehin im Paket. Schlimmer noch - jede neue App-Fassung bringt
+  // eine neue sw.js mit, die dann wartet, und die Nutzerin bekaeme im frisch
+  // aktualisierten Programm die Meldung "Eine neue Fassung steht bereit".
+  if (window.Capacitor?.isNativePlatform?.()) return;
 
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -1792,6 +1865,7 @@ function init() {
   bindEvents();
   measureChrome();
   markProFeatures();
+  sortHomeCards();
   syncViewInputs();
   syncOptionInputs();
   applyLanguage();          // ruft updateExplorer() und renderInfo() mit auf
