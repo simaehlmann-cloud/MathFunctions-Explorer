@@ -96,7 +96,12 @@ for (const m of html.matchAll(/<script src="([^"]+)"/g)) {
    letzte. Genau so blieb der Farbkonflikt im Dunkelmodus unbemerkt bestehen,
    obwohl die neuen Werte im selben Block darueberstanden. */
 const css = await read('style.css');
-for (const m of css.matchAll(/(:root[^{]*)\{([^}]*)\}/g)) {
+/* Kommentare vorher entfernen. Sonst zieht der Selektor-Ausdruck den davor
+   stehenden Kommentarblock mit in den Selektor, und ":root" wird nicht mehr
+   als solcher erkannt - genau daran ist die Farbpruefung stillschweigend
+   an der halben Palette vorbeigelaufen. */
+const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+for (const m of cssClean.matchAll(/(:root[^{]*)\{([^}]*)\}/g)) {
   const sel = m[1].trim();
   const names = [...m[2].matchAll(/(--[\w-]+)\s*:/g)].map(x => x[1]);
   const seen = new Set(), dupes = new Set();
@@ -131,15 +136,44 @@ function labOf(hex) {
 }
 const deltaE = (a, b) => Math.hypot(...labOf(a).map((v, i) => v - labOf(b)[i]));
 
-function paletteOf(selector) {
-  const m = css.match(new RegExp(selector.replace(/[[\]"]/g, '\\$&') + '\\s*\\{([^}]*)\\}'));
-  if (!m) return {};
-  return Object.fromEntries([...m[1].matchAll(/(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})/g)].map(x => [x[1], x[2]]));
+/* Bloecke einsammeln. Wichtig: Selektoren koennen zusammengesetzt sein -
+   ":root, :root[data-theme=\"light\"]". Eine frueherer Fassung suchte nach dem
+   genauen Selektor und uebersah diesen Block komplett; die Farbpruefung lief
+   damit auf einer halben Palette. */
+function cssBlocks() {
+  const out = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(cssClean))) {
+    const sels = m[1].split(',').map(x => x.trim()).filter(Boolean);
+    const vars = Object.fromEntries(
+      [...m[2].matchAll(/(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})/g)].map(x => [x[1], x[2]]));
+    if (Object.keys(vars).length) out.push({ sels, vars });
+  }
+  return out;
 }
-const lightPal = paletteOf(':root');
-const darkPal = { ...lightPal, ...paletteOf(':root\\[data-theme="dark"\\]') };
+const BLOCKS = cssBlocks();
 
-for (const [themeName, pal] of [['hell', lightPal], ['dunkel', darkPal]]) {
+/** Palette fuer eine Kombination aus Farbschema und Darstellung. */
+function paletteFor({ theme = 'light', display = 'normal' } = {}) {
+  const wanted = new Set([':root', `:root[data-theme="${theme}"]`]);
+  if (display === 'beamer') {
+    wanted.add(':root[data-display="beamer"]');
+    wanted.add(`:root[data-display="beamer"][data-theme="${theme}"]`);
+  }
+  const pal = {};
+  for (const b of BLOCKS) {
+    if (b.sels.some(sel => wanted.has(sel))) Object.assign(pal, b.vars);
+  }
+  return pal;
+}
+const lightPal = paletteFor({ theme: 'light' });
+const darkPal = paletteFor({ theme: 'dark' });
+const beamerLight = paletteFor({ theme: 'light', display: 'beamer' });
+const beamerDark = paletteFor({ theme: 'dark', display: 'beamer' });
+
+for (const [themeName, pal] of [['hell', lightPal], ['dunkel', darkPal],
+                                ['Beamer hell', beamerLight], ['Beamer dunkel', beamerDark]]) {
   for (const c of LINE_COLORS) {
     if (!pal[c]) { note(`CSS: "${c}" fehlt im Modus ${themeName}`); continue; }
   }
@@ -151,6 +185,30 @@ for (const [themeName, pal] of [['hell', lightPal], ['dunkel', darkPal]]) {
       if (d < MIN_DELTA_E) {
         note(`Farben: ${a} und ${b} sind im Modus ${themeName} zu aehnlich (dE ${d.toFixed(1)} < ${MIN_DELTA_E})`);
       }
+    }
+  }
+}
+
+/* Kontrast gegen den Zeichenuntergrund. Eine Linie mit weniger als 3:1 ist
+   auf einer Projektionsflaeche nicht mehr sicher zu sehen. */
+const MIN_CONTRAST = 3.0;
+function relLum(hex) {
+  const [r, g, b] = rgbOf(hex).map(c => (c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+for (const [themeName, pal] of [['hell', lightPal], ['dunkel', darkPal],
+                                ['Beamer hell', beamerLight], ['Beamer dunkel', beamerDark]]) {
+  const bg = pal['--surface'];
+  if (!bg) { note(`CSS: "--surface" fehlt im Modus ${themeName}`); continue; }
+  for (const c of LINE_COLORS) {
+    if (!pal[c]) continue;
+    const k = contrast(pal[c], bg);
+    if (k < MIN_CONTRAST) {
+      note(`Farben: ${c} hat im Modus ${themeName} nur ${k.toFixed(1)}:1 Kontrast zum Untergrund`);
     }
   }
 }
@@ -207,6 +265,33 @@ if (!(await exists('package-lock.json'))) {
   for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
     if (!lock.packages?.[`node_modules/${dep}`]) {
       note(`package-lock.json kennt "${dep}" nicht - Sperrdatei mit "npm install" erneuern`);
+    }
+  }
+}
+
+/* --- 8 · Umlaute ---------------------------------------------------------
+   Die deutschen Texte sind einmal mit umschriebenen Umlauten in die Datei
+   geraten - auf dem Telefon stand dann "Ueber", "fuer" und "Spaeter". In
+   Kommentaren und Bezeichnern ist die Umschreibung in Ordnung, in
+   Anzeigetexten nicht. Woerter, die im Deutschen wirklich so geschrieben
+   werden, stehen in der Ausnahmeliste. */
+const UMLAUT_OK = new Set([
+  'Aktuelle', 'aktueller', 'Achsenausschnitt', 'anfassen', 'Anfassen', 'angepasst',
+  'Aussage', 'Ausschnitt', 'bauen', 'dass', 'Fassung', 'Frequenz', 'Funktionsklasse',
+  'grauen', 'Impressum', 'Klasse', 'Klassenarbeiten', 'Koeffizient', 'muss',
+  'Nachbauen', 'neue', 'Neue', 'Neues', 'Passend', 'passt', 'smaehlmann'
+]);
+
+{
+  const dictStart = i18n.indexOf('const de = {');
+  const dictEnd = i18n.indexOf('const en = {');
+  const german = i18n.slice(dictStart, dictEnd);
+  const seen = new Set();
+  for (const line of german.matchAll(/^\s*'[\w.]+':\s*'((?:[^'\\]|\\.)*)'/gm)) {
+    for (const word of line[1].match(/[A-Za-zÄÖÜäöüß]+/g) ?? []) {
+      if (!/ae|oe|ue/i.test(word) || UMLAUT_OK.has(word) || seen.has(word)) continue;
+      seen.add(word);
+      note(`Deutscher Text: "${word}" sieht nach umschriebenem Umlaut aus - bitte ä, ö, ü schreiben`);
     }
   }
 }

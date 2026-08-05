@@ -620,6 +620,82 @@ if (saved) {
   expect(sess.inApp === true, 'gemerkt, dass der Explorer offen war');
 }
 
+// --- Auswahlliste fuehrt alle Funktionsklassen ----------------------------
+click('#btn-home'); await tick();
+click('.fn-card[data-category="linear"]'); await tick();
+const fsel = $('#function-form');
+const groups = Array.from(fsel.querySelectorAll('optgroup'));
+expect(groups.length === 9, `alle neun Klassen stehen in der Liste (${groups.length})`);
+expect(fsel.querySelectorAll('option').length === 12, 'alle zwoelf Darstellungsformen sind waehlbar');
+expect(!fsel.closest('.form-row').hidden, 'die Liste ist sichtbar, auch bei nur einer Form');
+
+if (LITE) {
+  const locked = groups.filter(g => g.label.includes('PRO'));
+  expect(locked.length === 7, `Lite: sieben Klassen sind als PRO gekennzeichnet (${locked.length})`);
+  expect(groups.some(g => !g.label.includes('PRO')), 'Lite: die enthaltenen Klassen tragen keine Kennzeichnung');
+  // Auswahl einer gesperrten Klasse muss zurueckgenommen werden
+  fsel.value = 'rational';
+  fsel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await tick();
+  expect(fsel.value === 'linear', 'Lite: gesperrte Auswahl wird zurueckgenommen');
+  expect($('#pro-dialog').open, 'Lite: und der Hinweis erscheint');
+  if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
+  // Auf der Startseite muessen die gesperrten Karten sichtbar gekennzeichnet sein
+  click('#btn-home'); await tick();
+  const cards = $$('.fn-card[data-feature]');
+  const catCards = cards.filter(c => c.dataset.category);
+  expect(catCards.length === 7, `sieben gesperrte Funktionsklassen (${catCards.length})`);
+  expect(cards.length === 8, `dazu der Quiz-Baukasten, also acht Sperren insgesamt (${cards.length})`);
+  expect(cards.every(c => c.classList.contains('is-locked')), 'alle gesperrten Karten tragen die Kennzeichnung');
+  expect(cards.every(c => c.getAttribute('aria-disabled') === 'true'), 'und sind als gesperrt ausgezeichnet');
+  expect($$('.fn-card:not([data-feature])').length === 3,
+         'frei bleiben zwei Funktionsklassen und die Info-Karte');
+} else {
+  expect(!groups.some(g => g.label.includes('PRO')), 'Pro: keine Klasse ist gekennzeichnet');
+  // Klassenwechsel direkt aus dem Explorer heraus
+  fsel.value = 'sinus';
+  fsel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await tick();
+  expect($('#parameters-container').children.length === 4, 'Klassenwechsel ueber die Liste laedt die Sinusfunktion');
+  expect($('#opt-piAxis').checked, 'und stellt die pi-Achse ein');
+}
+
+// --- Zurueck-Tiefe wird mitgezaehlt ---------------------------------------
+click('#btn-home'); await tick();
+expect(window.MFE.nav.depth >= 0, 'die Verlaufstiefe ist bekannt');
+const d0 = window.MFE.nav.depth;
+click('.fn-card[data-category="linear"]'); await tick();
+expect(window.MFE.nav.depth === d0 + 1, 'ein Bildschirmwechsel erhoeht die Tiefe um genau eins');
+click('#tab-btn-table'); await tick();
+expect(window.MFE.nav.depth === d0 + 2, 'ein Reiterwechsel ebenfalls');
+await back(); await back();
+expect(window.MFE.nav.depth === d0, 'zweimal Zurueck bringt die Tiefe wieder auf den Ausgangswert');
+
+// --- Startseite: Freigeschaltetes zuerst ----------------------------------
+click('#btn-home'); await tick();
+{
+  const grid = $$('.fn-grid')[0];
+  const cards = Array.from(grid.children).filter(el => el.classList.contains('fn-card'));
+  const firstLocked = cards.findIndex(c => c.classList.contains('is-locked'));
+  const lastOpen = cards.map(c => c.classList.contains('is-locked')).lastIndexOf(false);
+  if (LITE) {
+    expect(firstLocked > lastOpen, 'Lite: gesperrte Karten stehen hinter den freien');
+    expect(grid.querySelector('.grid-sep'), 'Lite: eine Trennzeile kuendigt den Pro-Teil an');
+    expect(cards.slice(0, 2).every(c => !c.classList.contains('is-locked')),
+           'Lite: die ersten beiden Karten sind nutzbar');
+  } else {
+    expect(!grid.querySelector('.grid-sep'), 'Pro: keine Trennzeile noetig');
+    expect(cards.every(c => !c.classList.contains('is-locked')), 'Pro: nichts ist gesperrt');
+  }
+}
+
+// --- Store-Verweis vor der Veroeffentlichung ------------------------------
+expect(window.MFE.licence.openStore() === 'notyet',
+       'Solange die Pro-Ausgabe nicht im Store ist, wird sie nicht aufgerufen');
+expect(window.MFE.licence.storeLive() === false, 'der Schalter steht auf "noch nicht"');
+expect(window.MFE.billing.status() === 'web' || window.MFE.billing.status() === 'owned',
+       'Billing meldet im Browser einen sinnvollen Zustand');
+
 // Sprache umschalten
 click('#btn-lang-en'); await tick();
 expect($('#tab-btn-table').textContent === 'Table of values', 'Sprachwechsel wirkt');
