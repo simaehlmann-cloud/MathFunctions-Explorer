@@ -1,4 +1,4 @@
-# MathFunctions Explorer v6
+# MathFunctions Explorer v6.3
 
 Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
 Läuft vollständig im Browser oder als Android-App — ohne Server, ohne Konto,
@@ -14,6 +14,99 @@ python3 -m http.server 8000     # oder: npm run serve
 
 Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
 funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## Was in v6.3 berichtigt wurde
+
+**Das empfohlene Billing-Plugin existiert nicht.** In `billing.js` und in
+dieser Datei stand `npm install @capacitor-community/in-app-purchases` — dieses
+Paket gibt es auf npm nicht, der Befehl endet in einem 404. Der Adapter ist auf
+**`cordova-plugin-purchase`** umgebaut, das es wirklich gibt, gepflegt wird und
+unter Capacitor läuft. Die API (`CdvPurchase.store`) ist eine andere, deshalb
+ist die Datei neu geschrieben statt umbenannt.
+
+**Der Store-Verweis führte auf eine Fehlerseite.** Solange die Pro-Ausgabe
+nicht veröffentlicht ist, landete jeder Klick auf „Pro-Ausgabe ansehen" bei
+Google im Nichts — und die App wirkte kaputt. Neu: `STORE_LIVE` in
+`licence.js` und `BILLING_READY` in `billing.js`. Beide stehen auf `false`;
+die App sagt dann ehrlich, dass es die Pro-Ausgabe noch nicht gibt.
+
+> **Vor der Veröffentlichung beide auf `true` setzen.** Sonst kann niemand
+> kaufen, obwohl alles andere bereit ist.
+
+**In Lite stand Gesperrtes vor Nutzbarem.** Sieben von neun Klassen sind dort
+gesperrt; man scrollte an lauter PRO-Karten vorbei, bevor etwas Anklickbares
+kam. Die Startseite sortiert jetzt Freigeschaltetes nach oben, getrennt durch
+eine Zeile „In der Pro-Ausgabe enthalten". Die fachliche Reihenfolge innerhalb
+beider Gruppen bleibt erhalten.
+
+**Fachjargon in den Parametertexten.** „Formfaktor", „Linearer Koeffizient",
+„Frequenz" sind meine Wörter, nicht die eines Schulbuchs. Ersetzt durch
+Formulierungen, die sagen, was passiert. Nebenbei Minuszeichen und π
+vereinheitlicht.
+
+**Beamer-Modus:** Gitter und Achsen sind jetzt deutlich stärker (Gitter von
+1,2:1 auf 1,8:1 im hellen, 2,2:1 im dunklen Modus; Achse von 10,4:1 auf
+18,7:1). Ein Gitter mit 1,2:1 ist am Bildschirm angenehm zurückhaltend und auf
+einer Leinwand schlicht nicht vorhanden.
+
+**Die Farbprüfung lief auf einer halben Palette.** `tools/check.mjs` suchte
+nach dem Selektor `:root` — das Stylesheet schreibt aber
+`:root, :root[data-theme="light"]`, und der davorstehende Kommentarblock wurde
+mit in den Selektor gezogen. Der Prüfer sah die hellen Kurvenfarben nie. Jetzt
+werden Kommentare entfernt, zusammengesetzte Selektoren aufgelöst und **alle
+vier Kombinationen** geprüft (hell/dunkel × normal/Beamer), zusätzlich der
+Kontrast jeder Linie gegen den Zeichenuntergrund.
+
+---
+
+## Was in v6.2 berichtigt wurde
+
+**Die deutschen Texte hatten keine Umlaute.** Auf dem Telefon stand „Ueber
+MathFunctions Explorer", „fuer wen sie gedacht ist", „Spaeter", „Laeuft". Die
+Ursache lag nicht im Code, sondern in meinen Bearbeitungsskripten: ich hatte
+die Texte ASCII-sicher eingefügt und nie zurückgewandelt. 94 Zeilen berichtigt
+— über eine geprüfte Wortliste, nicht per pauschalem Suchen-und-Ersetzen, denn
+„Klasse", „dass", „muss", „Fassung" und vor allem „Koeffizient" werden im
+Deutschen wirklich so geschrieben. Das Englische blieb unberührt.
+
+`npm run check` prüft das jetzt dauerhaft: jedes Wort im deutschen Wörterbuch,
+das nach umschriebenem Umlaut aussieht und nicht in der Ausnahmeliste steht,
+lässt den Selbsttest fehlschlagen.
+
+---
+
+## Was in v6.1 berichtigt wurde
+
+Vier Befunde aus dem Test auf einem echten Gerät:
+
+**Der Zurück-Knopf beendete die App weiterhin.** `js/nav.js` war fertig, aber
+`@capacitor/app` fehlte in den Abhängigkeiten — ohne dieses Plugin gibt es gar
+kein `backButton`-Ereignis, und die WebView beendet die App beim ersten Druck.
+Plugin ergänzt; die Entscheidung hängt jetzt an der selbst gezählten
+Verlaufstiefe statt an `canGoBack` der WebView, denn dort zählen auch fremde
+Einträge mit. Fehlt das Plugin, steht künftig eine Warnung in der Konsole.
+
+**Die installierte App trug das Capacitor-Logo.** Die PNGs in `icons/` landen
+ausschließlich im Web-Manifest; das Launcher-Icon kommt aus
+`android/app/src/main/res/mipmap-*`, und diesen Ordner legt `npx cap add
+android` mit den Standardicons an. `tools/make_android_icons.py` erzeugt
+vollständige Sätze (fünf Dichten, rund, adaptiv mit Vordergrund und
+Hintergrundfarbe) nach `android-res/pro` und `android-res/lite`; der Workflow
+kopiert sie nach dem Anlegen des Projekts darüber. Bewusst vorab erzeugt und
+mitgeliefert — so braucht der Server kein Bildwerkzeug.
+
+**„Eine neue Fassung steht bereit" erschien in der installierten App.** Der
+Service Worker ist dort sinnlos, weil die Dateien ohnehin im Paket liegen —
+und jede App-Aktualisierung brachte eine neue `sw.js` mit, die wartete. Auf
+nativen Plattformen wird er nicht mehr registriert.
+
+**Die Auswahlliste führt jetzt alle neun Funktionsklassen**, nach Klasse
+gruppiert. Vorher zeigte sie nur die Darstellungsformen der aktuellen Klasse;
+um von einer Parabel zu einer Sinuskurve zu kommen, musste man zurück zur
+Startseite. Gesperrte Klassen bleiben sichtbar, tragen `– PRO` und führen bei
+Auswahl zum Hinweis, statt stillschweigend verschluckt zu werden.
 
 ---
 
@@ -206,7 +299,9 @@ tools/smoke.mjs          Klickdurchlauf in jsdom
 tools/qr-selftest.mjs    QR gegen hinterlegte Referenzcodes
 tools/qr-verify.mjs      QR modulweise gegen eine fremde Bibliothek
 tools/quiz-codec.mjs     Quiz-Kodierung: verlustfrei, kompakt, robust
-tools/make_icons.py      erzeugt alle Icons neu (braucht Pillow)
+tools/make_icons.py      erzeugt die Web-Icons neu (braucht Pillow)
+tools/make_android_icons.py  erzeugt die Launcher-Icons nach android-res/
+android-res/             fertige Launcher-Icons, vom Workflow übernommen
 ```
 
 Bewusst **ohne ES-Module**: Alle Dateien hängen sich an ein gemeinsames
@@ -345,7 +440,8 @@ das ist Absicht und steht so in `js/licence.js`.
 
 - [ ] Anwendungskennung prüfen (`capacitor.config.json`, `PRO_APP_ID` in `js/licence.js`)
 - [ ] `PRODUCT_ID` in `js/billing.js` gegen die Play Console abgleichen
-- [ ] Billing-Plugin installieren: `npm install @capacitor-community/in-app-purchases`
+- [ ] Billing-Plugin installieren: `npm install cordova-plugin-purchase`
+- [ ] `STORE_LIVE` in `js/licence.js` und `BILLING_READY` in `js/billing.js` auf `true`
 - [ ] Impressum und Datenschutzerklärung von jemandem mit Zulassung durchsehen lassen
 - [ ] Datenschutz-Formular der Play Console ausfüllen (Antwort: keine Datenerhebung)
 - [ ] Keystore anlegen, sichern, Secrets hinterlegen
