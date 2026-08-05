@@ -117,6 +117,16 @@ if (!window.navigator.clipboard) {
   Object.defineProperty(window.navigator, 'clipboard', { value: { writeText: async () => {} } });
 }
 
+/* Das Stylesheet mitladen. Ohne es prueft der Durchlauf nur die Eigenschaft
+   .hidden - und genau daran ist ein Fehler vorbeigelaufen: eine CSS-Regel mit
+   display schlaegt das hidden-Attribut, das Element blieb sichtbar, und der
+   Test meldete trotzdem "verborgen". */
+{
+  const style = window.document.createElement('style');
+  style.textContent = readFileSync(path.join(ROOT, 'style.css'), 'utf8');
+  window.document.head.appendChild(style);
+}
+
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
                'js/graph.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 for (const f of files) {
@@ -788,6 +798,29 @@ expect(window.document.documentElement.dataset.screen === 'home',
        'der Bildschirm steht als Attribut fest (damit das CSS reagieren kann)');
 click('.fn-card[data-category="linear"]'); await tick();
 expect(window.document.documentElement.dataset.screen === 'app', 'und wechselt mit');
+
+// --- Verborgen heisst verborgen -------------------------------------------
+// Der Fehler, der das ausgeloest hat: .update-bar hatte display: flex, und
+// Autoren-CSS schlaegt die Browser-Regel [hidden] { display: none }. Die
+// Leiste "Eine neue Fassung steht bereit" stand deshalb DAUERHAFT da - auch
+// in der App, auch ohne Service Worker. Geprueft wird jetzt die tatsaechliche
+// Darstellung, nicht nur die Eigenschaft .hidden.
+{
+  const shown = (el) => window.getComputedStyle(el).display !== 'none';
+  const mustHide = ['#update-bar', '#chip-split', '#info-lite-box', '#backup-file',
+                    '#btn-play-next', '#btn-play-again', '#btn-play-wrong'];
+  for (const sel of mustHide) {
+    const el = $(sel);
+    if (!el) { errors.push(`Element ${sel} fehlt`); continue; }
+    el.hidden = true;
+    expect(!shown(el), `${sel}: hidden verbirgt das Element wirklich`);
+  }
+  // Gegenprobe: ohne das Attribut muss es sichtbar sein.
+  const bar = $('#update-bar');
+  bar.hidden = false;
+  expect(shown(bar), '#update-bar ohne hidden ist sichtbar');
+  bar.hidden = true;
+}
 
 // Sprache umschalten
 click('#btn-lang-en'); await tick();

@@ -341,6 +341,17 @@ const NARROWEST_DEVICE = 360;
   }
 }
 
+/* --- 11 · [hidden] --------------------------------------------------------
+   Die Browser-Regel [hidden] { display: none } steht im UA-Stylesheet und
+   verliert gegen JEDE Autoren-Regel mit display - unabhaengig von der
+   Spezifitaet. Ohne eine eigene Regel bleiben Elemente sichtbar, obwohl das
+   Attribut gesetzt ist. Genau so stand die Leiste "Eine neue Fassung steht
+   bereit" dauerhaft im Bild. */
+if (!/\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/.test(cssClean)) {
+  note('style.css: die Regel [hidden] { display: none !important; } fehlt - '
+     + 'verborgene Elemente bleiben sichtbar, sobald irgendeine Regel display setzt');
+}
+
 /* --- Ergebnis ------------------------------------------------------------ */
 if (problems.length) {
   console.error(`${problems.length} Befund(e):`);
