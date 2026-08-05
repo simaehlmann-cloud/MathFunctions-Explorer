@@ -781,3 +781,87 @@ th.col-extra { font-family: var(--ff-ui); font-style: normal; }
   font-size: .82rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .07em;
 }
+
+/* ==========================================================================
+   Ergaenzungen v6.5 - Platz auf kleinen Bildschirmen
+   Befund: die Kopfzeile war breiter als ein Telefon. Vier Symbolknoepfe, zwei
+   Sprachschalter und das Logo passten bei 360 bis 412 Pixeln nicht neben-
+   einander, und nichts durfte umbrechen - die ganze Seite liess sich seitlich
+   verschieben. Drei Massnahmen zusammen loesen das.
+   ========================================================================== */
+
+/* 1 · Die Kopfzeile darf umbrechen. Das ist die Rueckfallebene, die
+      garantiert, dass NIE etwas aus dem Bild laeuft. */
+.app-header { flex-wrap: wrap; row-gap: .35rem; }
+.brand { min-width: 0; flex: 1 1 auto; }
+.brand-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-controls { flex: 0 0 auto; margin-left: auto; }
+
+/* 2 · Auf der Startseite gibt es nichts rueckgaengig zu machen. */
+:root[data-screen="home"] #btn-undo,
+:root[data-screen="home"] #btn-redo { display: none; }
+
+/* 3 · Auf schmalen Geraeten Abstaende straffen und die Sprachkuerzel
+      weglassen - die Flaggen tragen die Information, die Beschriftung fuer
+      Screenreader steckt im aria-label. */
+@media (max-width: 460px) {
+  .app-header { gap: .3rem; padding-inline: .5rem; }
+  .header-controls { gap: .15rem; }
+  .flag-code { display: none; }
+  .flag-btn { padding: .3rem .35rem; }
+}
+
+/* Nichts darf breiter werden als sein Platz. Billige Versicherung gegen
+   kuenftige Ueberbreiten - besser als overflow-x: hidden, das den Fehler
+   nur unsichtbar macht. */
+.screen, .home-inner, .page-inner, .tab-panel,
+.canvas-panel, .controls-panel, .live-panel { min-width: 0; max-width: 100%; }
+img, canvas, svg, table, pre { max-width: 100%; }
+
+/* --- Startseite: kompakter, damit weniger gescrollt werden muss --- */
+.quick-pick { display: grid; gap: .3rem; margin: 0 0 1.25rem; }
+.quick-pick label { font-size: .82rem; font-weight: 650; color: var(--muted); }
+.quick-pick select { width: 100%; }
+
+.fn-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr)); }
+canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
+@media (max-width: 520px) {
+  .fn-card { padding: .8rem; gap: .25rem; }
+  .fn-name { font-size: .95rem; }
+  .fn-form { font-size: .85rem; }
+  .fn-desc { font-size: .82rem; }
+  .home-title { margin-bottom: 1.25rem; }
+}
+
+/* ==========================================================================
+   Wertetabelle neben dem Graphen
+   Greift ab 860 Pixeln Breite und im Querformat ab 700 - also auf Tablets,
+   am Rechner und am quer gehaltenen Telefon. Am Telefon im Hochformat bleibt
+   es bei den Reitern; dort waere eine zweite Spalte unlesbar schmal.
+   ========================================================================== */
+#screen-app.is-active.is-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 32%);
+  grid-template-areas: "tabs tabs" "main side";
+  align-items: start;
+  gap: 0 1.25rem;
+  padding-inline: clamp(.75rem, 2vw, 1.5rem);
+}
+#screen-app.is-split .tabs { grid-area: tabs; }
+#screen-app.is-split .tab-panel.is-active { grid-area: main; min-width: 0; }
+#screen-app.is-split #tab-table {
+  grid-area: side; display: block;
+  position: sticky; top: var(--stick-top);
+  max-height: calc(100dvh - var(--stick-top) - 1rem);
+  overflow: auto;
+  padding: .9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+/* In der schmalen Spalte reichen zwei Felder nebeneinander. */
+#screen-app.is-split #tab-table .table-controls { grid-template-columns: 1fr 1fr; }
+#screen-app.is-split #tab-table .hint { font-size: .78rem; }
+/* Der Reiter "Wertetabelle" fuehrt dann ins Leere - er bleibt sichtbar,
+   wird aber als bereits geoeffnet ausgewiesen. */
+#screen-app.is-split .tab-btn[aria-disabled="true"] { opacity: .5; }

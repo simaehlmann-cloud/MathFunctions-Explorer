@@ -72,6 +72,14 @@
     <p class="eyebrow" data-i18n="home.eyebrow">Klasse 7 bis 11</p>
     <h1 class="home-title" data-i18n="home.title">Welche Funktion willst du untersuchen?</h1>
 
+    <!-- Schnellwahl fuer alle, die schon wissen, wohin sie wollen. Die Karten
+         bleiben: fuer Schuelerinnen und Schueler ist das Bild der Kurve der
+         schnellere Weg als ein Listeneintrag. -->
+    <div class="quick-pick">
+      <label for="home-select" data-i18n="home.quickPick">Oder direkt auswählen</label>
+      <select id="home-select"></select>
+    </div>
+
     <div class="fn-grid">
       <button class="fn-card" type="button" data-category="linear">
         <canvas class="fn-thumb" data-thumb="linear" aria-hidden="true"></canvas>
@@ -210,6 +218,8 @@
           <label class="chip"><input type="checkbox" id="opt-derivative"><span data-i18n="opt.derivative">Ableitung f′</span></label>
           <label class="chip"><input type="checkbox" id="opt-tangent"><span data-i18n="opt.tangent">Tangente</span></label>
           <label class="chip"><input type="checkbox" id="opt-trace"><span data-i18n="opt.trace">Punkt verfolgen</span></label>
+          <!-- Nur sichtbar, wenn der Bildschirm breit genug ist. -->
+          <label class="chip" id="chip-split" hidden><input type="checkbox" id="opt-split" checked><span data-i18n="opt.split">Wertetabelle daneben</span></label>
         </div>
       </details>
 
@@ -442,6 +452,7 @@
 
     <h2 data-i18n="info.editionTitle">Deine Ausgabe</h2>
     <p id="info-edition" class="edition-line"></p>
+    <p id="info-version" class="quiz-meta"></p>
     <div id="info-lite-box" class="pro-box" hidden>
       <p data-i18n="info.liteHint">In der Lite-Ausgabe sind quadratische und trigonometrische Funktionen, die zweite Kurve, der Nachbau-Modus, eigene Quizze und der Bildexport nicht enthalten.</p>
       <button id="btn-info-store" class="btn-primary" type="button" data-i18n="btn.getPro">Pro-Ausgabe ansehen</button>

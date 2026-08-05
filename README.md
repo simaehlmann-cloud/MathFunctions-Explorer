@@ -1,4 +1,4 @@
-# MathFunctions Explorer v6.3
+# MathFunctions Explorer v6.5
 
 Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
 Läuft vollständig im Browser oder als Android-App — ohne Server, ohne Konto,
@@ -14,6 +14,54 @@ python3 -m http.server 8000     # oder: npm run serve
 
 Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
 funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## Was in v6.5 neu ist
+
+**Die Startseite lief seitlich aus dem Bild.** Die Kopfzeile war breiter als
+ein Telefon: Logo, vier Symbolknöpfe und zwei Sprachschalter passten bei
+360–412 px nicht nebeneinander, und nichts durfte umbrechen — links fehlten
+Zeichen. Drei Maßnahmen: die Kopfzeile darf jetzt umbrechen (die Rückfallebene,
+die garantiert, dass nie etwas herausläuft), auf der Startseite verschwinden
+Rückgängig und Wiederherstellen (dort gibt es nichts zurückzunehmen), und
+unter 460 px entfallen die Sprachkürzel — die Flaggen tragen die Information.
+Dazu `min-width: 0` und `max-width: 100%` auf allen Behältern.
+
+**Die Karten sind kompakter.** Ab etwa 350 px stehen zwei nebeneinander, die
+Miniaturgraphen skalieren mit (`clamp(58px, 17vw, 96px)`). Statt neunmal
+scrollen sieht man jetzt vier bis sechs Klassen auf einen Blick.
+
+**Schnellwahl auf der Startseite.** Über den Karten steht eine Liste mit allen
+neun Klassen. Die Karten bleiben der Hauptweg — dazu unten mehr.
+
+**Wertetabelle neben dem Graphen.** Ab 860 px Breite oder im Querformat ab
+700 px stehen Graph und Tabelle nebeneinander; die Tabelle klebt beim Scrollen
+und rollt eigenständig. Am Telefon im Hochformat bleibt es bei den Reitern —
+dort wäre eine zweite Spalte unlesbar schmal. Abschaltbar über
+*Im Graphen anzeigen → Wertetabelle daneben*, die Einstellung wird gemerkt.
+
+---
+
+## Was in v6.4 berichtigt wurde
+
+**Ein bereits registrierter Service Worker verschwindet nicht dadurch, dass
+man ihn nicht mehr registriert.** In v6.1 hatte ich die Registrierung auf
+nativen Plattformen mit einem `return` übersprungen — der zuvor installierte
+Worker lief aber weiter und meldete weiter „Eine neue Fassung steht bereit".
+Er wird jetzt aktiv abgemeldet und sein Zwischenspeicher gelöscht.
+
+**Die App zeigt ihre Fassungsnummer.** Auf der Info-Seite steht jetzt
+`Fassung 6.4.0 · Pro · installierte App`. Bisher ließ sich nur raten, welcher
+Stand tatsächlich auf einem Gerät läuft — und Fehlersuche, die mit einer
+falschen Annahme beginnt, kostet eine Runde. Die Nummer setzt
+`tools/build-www.mjs` aus `package.json`; `npm run check` prüft, dass
+`package.json`, `js/app.js` und `sw.js` dieselbe tragen.
+
+**Ein Fehler im Build-Skript:** Es prüfte mit „hat sich der Text geändert?",
+ob eine Ersetzung geglückt ist. Unverändert heißt aber auch „stand schon
+richtig drin" — der Build brach ab, sobald die Fassungsnummer bereits
+stimmte. Geprüft wird jetzt auf Vorkommen des Musters.
 
 ---
 
