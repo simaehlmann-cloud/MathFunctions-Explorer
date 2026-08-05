@@ -235,14 +235,174 @@ const FUNCTIONS = {
       g.line(v.c, v.d, v.c + period, v.d, { color: col(2), width: 3 });
       g.labelAt(v.c + period / 2, v.d, `T = ${mfmt(period)}`, col(2), 'below');
     }
+  },
+
+  tangens: {
+    category: 'trig',
+    piAxis: true,
+    params: [
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.tan.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 1, min: 0.25, max: 4, step: 0.25, color: 2, desc: 'd.tan.b', hardMin: 0.05, pool: [0.5, 1, 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -Math.PI, max: Math.PI, step: Math.PI / 12, color: 3, desc: 'd.tan.c', pool: [0, Math.PI / 4, Math.PI / 2] },
+      { id: 'd', symbol: 'd', value: 0, min: -4, max: 4, step: 0.25, color: 4, desc: 'd.tan.d', pool: [-1, 0, 1] }
+    ],
+    tokens: () => [P('a'), T(' \u00b7 tan('), P('b'), T(' \u00b7 (x \u2212 '), P('c'), T(')) + '), P('d')],
+    f: (x, v) => {
+      if (!v.b) return NaN;
+      const arg = v.b * (x - v.c);
+      // Genau auf der Polstelle liefert Math.tan wegen Rundung eine riesige
+      // endliche Zahl statt Unendlich. Das waere eine Luege im Graphen.
+      const k = arg / Math.PI - 0.5;
+      if (Math.abs(k - Math.round(k)) < 1e-12) return NaN;
+      return v.a * Math.tan(arg) + v.d;
+    },
+    rhs: (v) => tidy(`${coef(v.a)}tan(${coef(v.b)}(x ${v.c < 0 ? '+ ' + mfmt(-v.c) : '\u2212 ' + mfmt(v.c)})) ${term(v.d)}`),
+    /* Polstellen liegen bei c + (pi/2 + k\u00b7pi) / b. Es sind unendlich viele -
+       zurueckgegeben werden nur die im sichtbaren Bereich, sonst waere die
+       Liste nicht endlich. */
+    poles: (v, xMin = -20, xMax = 20) => {
+      if (!v.b) return [];
+      const out = [];
+      const step = Math.PI / v.b;
+      const first = v.c + Math.PI / (2 * v.b);
+      let k = Math.ceil((xMin - first) / step);
+      for (let i = 0; i < 400; i++) {
+        const x = first + k * step;
+        if (x > xMax) break;
+        if (x >= xMin) out.push(x);
+        k++;
+      }
+      return out;
+    },
+    handles: (v) => [{ x: v.c, y: v.d, hint: 'd.tan.c', set: (nx, ny) => ({ c: nx, d: ny }) }],
+    helpers: (g, v, col) => {
+      for (const x of FUNCTIONS.tangens.poles(v, g.xMin, g.xMax)) {
+        g.line(x, g.yMin, x, g.yMax, { color: col(2), dash: [6, 5] });
+      }
+      g.line(g.xMin, v.d, g.xMax, v.d, { color: col(4), dash: [3, 6] });
+      g.point(v.c, v.d, col(3));
+    }
+  },
+
+  cubic: {
+    category: 'polynomial',
+    params: [
+      { id: 'a', symbol: 'a', value: 0.2, min: -2, max: 2,  step: 0.05, color: 1, desc: 'd.cub.a', pool: [-1, -0.5, 0.25, 0.5, 1] },
+      { id: 'b', symbol: 'b', value: 0,   min: -4, max: 4,  step: 0.1,  color: 2, desc: 'd.cub.b', pool: [-2, -1, 0, 1, 2] },
+      { id: 'c', symbol: 'c', value: -2,  min: -8, max: 8,  step: 0.1,  color: 3, desc: 'd.cub.c', pool: [-3, -1, 0, 1, 3] },
+      { id: 'd', symbol: 'd', value: 0,   min: -8, max: 8,  step: 0.5,  color: 4, desc: 'd.cub.d', pool: [-2, 0, 1, 2] }
+    ],
+    tokens: () => [P('a'), T(' \u00b7 x'), SUP('3'), T(' + '), P('b'), T(' \u00b7 x'), SUP('2'), T(' + '), P('c'), T(' \u00b7 x + '), P('d')],
+    f: (x, v) => ((v.a * x + v.b) * x + v.c) * x + v.d,      // Horner: stabiler bei grossen x
+    rhs: (v) => tidy(`${coef(v.a)}x\u00b3 ${termCoef(v.b, 'x\u00b2')} ${termCoef(v.c)} ${term(v.d)}`),
+    handles: (v) => [{ x: 0, y: v.d, hint: 'poi.yint', set: (nx, ny) => ({ d: ny }) }],
+    helpers: (g, v, col) => {
+      g.point(0, v.d, col(4));
+      /* Wendestelle: f''(x) = 6a x + 2b = 0. Bei a = 0 ist die Funktion
+         quadratisch, dann gibt es keine. */
+      if (v.a !== 0) {
+        const xw = -v.b / (3 * v.a);
+        const yw = FUNCTIONS.cubic.f(xw, v);
+        g.line(xw, g.yMin, xw, g.yMax, { color: col(1), dash: [6, 5] });
+        g.point(xw, yw, col(1));
+        g.labelAt(xw, yw, 'W', col(1), 'above');
+      }
+    }
+  },
+
+  root: {
+    category: 'root',
+    params: [
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.root.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.root.b', pool: [-2, -1, 0, 1, 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.root.c', pool: [-2, -1, 0, 1, 2] }
+    ],
+    tokens: () => [P('a'), T(' \u00b7 \u221a(x \u2212 '), P('b'), T(') + '), P('c')],
+    // Links von b ist die Wurzel nicht definiert - NaN, nicht 0.
+    f: (x, v) => (x < v.b ? NaN : v.a * Math.sqrt(x - v.b) + v.c),
+    rhs: (v) => tidy(`${coef(v.a)}\u221a${bracket(v.b)} ${term(v.c)}`),
+    domainFrom: (v) => v.b,
+    handles: (v) => [{ x: v.b, y: v.c, hint: 'poi.start', set: (nx, ny) => ({ b: nx, c: ny }) }],
+    helpers: (g, v, col) => {
+      g.line(v.b, g.yMin, v.b, g.yMax, { color: col(2), dash: [3, 6] });
+      g.point(v.b, v.c, col(1));
+      g.labelAt(v.b, v.c, `(${mfmt(v.b)} | ${mfmt(v.c)})`, col(1), 'above');
+    }
+  },
+
+  absolute: {
+    category: 'absolute',
+    params: [
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.abs.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.abs.b', pool: [-3, -1, 0, 1, 3] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.abs.c', pool: [-2, -1, 0, 1, 2] }
+    ],
+    tokens: () => [P('a'), T(' \u00b7 |x \u2212 '), P('b'), T('| + '), P('c')],
+    f: (x, v) => v.a * Math.abs(x - v.b) + v.c,
+    rhs: (v) => tidy(`${coef(v.a)}|x ${v.b < 0 ? '+ ' + mfmt(-v.b) : '\u2212 ' + mfmt(v.b)}| ${term(v.c)}`),
+    vertex: (v) => ({ x: v.b, y: v.c }),
+    handles: (v) => [{ x: v.b, y: v.c, hint: 'poi.kink', set: (nx, ny) => ({ b: nx, c: ny }) }],
+    helpers: (g, v, col) => {
+      g.line(v.b, g.yMin, v.b, g.yMax, { color: col(2), dash: [6, 5] });
+      g.point(v.b, v.c, col(1));
+    }
+  },
+
+  logarithm: {
+    category: 'logarithm',
+    params: [
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.log.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.log.b', pool: [-2, -1, 0, 1] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.log.c', pool: [-2, -1, 0, 1, 2] }
+    ],
+    tokens: () => [P('a'), T(' \u00b7 ln(x \u2212 '), P('b'), T(') + '), P('c')],
+    f: (x, v) => (x <= v.b ? NaN : v.a * Math.log(x - v.b) + v.c),
+    rhs: (v) => tidy(`${coef(v.a)}ln${bracket(v.b)} ${term(v.c)}`),
+    domainFrom: (v) => v.b,
+    poles: (v) => [v.b],
+    handles: (v) => [{ x: v.b + 1, y: v.c, hint: 'poi.unit', set: (nx, ny) => ({ b: nx - 1, c: ny }) }],
+    helpers: (g, v, col) => {
+      g.line(v.b, g.yMin, v.b, g.yMax, { color: col(2), dash: [8, 5] });
+      g.labelAt(v.b, g.yMax, `x = ${mfmt(v.b)}`, col(2), 'right');
+      g.point(v.b + 1, v.c, col(1));
+    }
+  },
+
+  rational: {
+    category: 'rational',
+    params: [
+      { id: 'a', symbol: 'a', value: 1, min: -6, max: 6, step: 0.1, color: 1, desc: 'd.rat.a', pool: [-3, -2, -1, 1, 2, 3] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.rat.b', pool: [-2, -1, 0, 1, 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.rat.c', pool: [-2, -1, 0, 1, 2] }
+    ],
+    tokens: () => [P('a'), T(' / (x \u2212 '), P('b'), T(') + '), P('c')],
+    // Exakt an der Polstelle ist der Wert nicht definiert; +-Infinity waere
+    // beim Zeichnen eine Luege.
+    f: (x, v) => (x === v.b ? NaN : v.a / (x - v.b) + v.c),
+    rhs: (v) => tidy(`${mfmt(v.a)} / ${bracket(v.b)} ${term(v.c)}`),
+    asymptote: (v) => v.c,
+    poles: (v) => [v.b],
+    handles: (v) => [{ x: v.b + 1, y: v.a + v.c, hint: 'd.rat.a', set: (nx, ny) => ({ a: ny - v.c }) }],
+    helpers: (g, v, col) => {
+      g.line(v.b, g.yMin, v.b, g.yMax, { color: col(2), dash: [8, 5] });
+      g.line(g.xMin, v.c, g.xMax, v.c, { color: col(3), dash: [8, 5] });
+      g.labelAt(g.xMax, v.c, `y = ${mfmt(v.c)}`, col(3), 'left');
+      g.labelAt(v.b, g.yMin, `x = ${mfmt(v.b)}`, col(2), 'right');
+    }
   }
 };
 
+/* Reihenfolge = Reihenfolge auf der Startseite. */
 const CATEGORY_FORMS = {
   linear: ['linear'],
   quadratic: ['quad_standard', 'quad_vertex', 'quad_factored'],
+  polynomial: ['cubic'],
   exponential: ['exponential'],
-  trig: ['sinus']
+  logarithm: ['logarithm'],
+  trig: ['sinus', 'tangens'],
+  root: ['root'],
+  absolute: ['absolute'],
+  rational: ['rational']
 };
 
 return { clamp, fmt, mfmt, coef, term, bracket, bracketPi, termCoef, tidy,

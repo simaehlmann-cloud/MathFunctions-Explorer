@@ -10,15 +10,10 @@
 
    Belastbar wird die Pruefung nur an einer Stelle, die der Nutzer nicht
    kontrolliert:
-     · iOS      -> StoreKit-Quittung an den eigenen Server, dort gegen
-                   Apples verifyReceipt bzw. die App Store Server API pruefen
      · Android  -> Play Billing Purchase-Token gegen die Google Play
-                   Developer API pruefen
-     · Web      -> eigenes Konto, signiertes Token (z. B. JWT) mit kurzer
-                   Laufzeit, Signaturpruefung serverseitig
-
-   Der Server antwortet mit einem signierten Token, das die App nur noch
-   zwischenspeichert. Erst dann ist `edition === 'pro'` mehr als Kosmetik.
+                   Developer API pruefen (purchases.products.get)
+     · Web      -> eigenes Konto, signiertes Token mit kurzer Laufzeit,
+                   Signaturpruefung serverseitig
 
    Achtung CSP: sobald verifyWithServer() wirklich benutzt wird, muss in
    index.html `connect-src` die Lizenz-Domain erlauben. Das ist dann der
@@ -30,19 +25,39 @@ window.MFE = window.MFE || {};
 
 MFE.licence = (() => {
 
-  /** Beim Entwickeln auf 'pro' stellen, um alle Funktionen zu sehen.
-   *  Fuer den Release auf 'lite' setzen - die echte Freischaltung kommt dann
-   *  ueber verifyWithServer(). */
+  /* Wird vom Build-Skript ersetzt: tools/build-www.mjs setzt bei
+     `npm run build:lite` hier 'lite' ein. Beim Entwickeln auf 'pro' lassen,
+     um alle Funktionen zu sehen. */
   const DEV_EDITION = 'pro';
 
+  /** Anwendungskennung der Pro-Ausgabe im Play Store. Muss mit
+   *  capacitor.config.json der Pro-Ausgabe uebereinstimmen. */
+  const PRO_APP_ID = 'de.wisdompeak.mathfunctions';
+  const STORE_URL  = 'https://play.google.com/store/apps/details?id=' + PRO_APP_ID;
+
+  /* Was die Lite-Ausgabe NICHT kann. Eine einzige Liste - wer hier etwas
+     aendert, aendert es ueberall, weil die Oberflaeche ausschliesslich ueber
+     has() fragt. */
   const PRO_FEATURES = new Set([
-    'export',       // PNG-Export
-    'share',        // Deep Link kopieren
-    'drag',         // Graph anfassen
-    'ownQuiz',      // eigene Quizaufgabe aus dem Explorer
-    'transform',    // Transformation abspielen
-    'secondCurve',  // zweite Funktion g(x)
-    'practice'      // Nachbau-Modus
+    // Funktionsklassen. Lite behaelt lineare und exponentielle Funktionen.
+    'cat.quadratic',
+    'cat.polynomial',
+    'cat.logarithm',
+    'cat.trig',
+    'cat.root',
+    'cat.absolute',
+    'cat.rational',
+    // Werkzeuge
+    'calculus',       // Ableitung und Tangente
+    'quizBuilder',    // eigene Quizze bauen, speichern, weitergeben
+    'randomQuiz',     // Quiz per Knopfdruck erzeugen
+    'ownQuiz',        // Schnellaufgabe aus dem Explorer
+    'practice',       // Nachbau-Modus
+    'secondCurve',    // zweite Funktion g(x)
+    'export',         // PNG-Export
+    'share',          // Deep Link kopieren
+    'drag',           // Graph anfassen
+    'transform'       // Transformation abspielen
   ]);
 
   const STORE_KEY = 'mfe:licence';
@@ -80,6 +95,18 @@ MFE.licence = (() => {
     return edition;
   }
 
+  /** Fuehrt zur Pro-Ausgabe. In der nativen App uebernimmt Capacitor das
+   *  Ziel `_blank` und oeffnet den Play Store; im Browser einen neuen Tab.
+   *  Absichtlich `noopener`: die Zielseite darf nicht auf window.opener
+   *  zugreifen. */
+  function openStore() {
+    try {
+      const w = window.open(STORE_URL, '_blank', 'noopener,noreferrer');
+      if (w) return true;
+    } catch { /* Popup-Blocker oder WebView ohne Handler */ }
+    try { location.href = STORE_URL; return true; } catch { return false; }
+  }
+
   load();
 
   return {
@@ -90,6 +117,9 @@ MFE.licence = (() => {
     /** Nur fuer Entwicklung und Tests. */
     setEdition(v) { edition = v === 'pro' ? 'pro' : 'lite'; },
     verifyWithServer,
+    openStore,
+    STORE_URL,
+    PRO_APP_ID,
     PRO_FEATURES
   };
 })();
