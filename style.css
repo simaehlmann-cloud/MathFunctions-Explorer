@@ -680,7 +680,24 @@ th.col-extra { font-family: var(--ff-ui); font-style: normal; }
 :root[data-display="beamer"] .equations .equation-display { font-size: 1.25rem; }
 :root[data-display="beamer"] .readout { font-size: 1.05rem; font-weight: 650; }
 :root[data-display="beamer"] .map-btn { width: 44px; height: 44px; font-size: 1.2rem; }
-:root[data-display="beamer"] { --border: #94a3b8; }
+/* Beamer: Gitter und Achsen deutlich staerker. Ein Gitter mit 1,2:1 Kontrast
+   ist am Bildschirm angenehm zurueckhaltend und auf einer Projektionsflaeche
+   schlicht nicht vorhanden. Die zweite Kurve bekommt im hellen Modus einen
+   dunkleren Ton - 3,6:1 reichen fuer eine Leinwand nicht. */
+:root[data-display="beamer"] {
+  --border: #94a3b8;
+  --grid: #b8c4d4;
+  --grid-strong: #8fa0b8;
+  --axis: #0b1220;
+  --graph2: #c2410c;
+}
+:root[data-display="beamer"][data-theme="dark"] {
+  --grid: #46567c;
+  --grid-strong: #6b7ca8;
+  --axis: #f1f5f9;
+  --graph2: #fdba74;
+  --tangent: #fde047;
+}
 :root[data-display="beamer"][data-theme="dark"] { --border: #64748b; }
 :root[data-display="beamer"] #btn-beamer { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 
@@ -752,4 +769,15 @@ th.col-extra { font-family: var(--ff-ui); font-style: normal; }
   #print-sheet .ps-lines span { display: block; border-bottom: .5pt solid #999; height: 1px; }
   #print-sheet .ps-foot { margin-top: 1.2rem; font-size: 9pt; color: #555; border-top: .5pt solid #999; padding-top: .3rem; }
   @page { margin: 1.6cm; }
+}
+
+/* --- Trennzeile vor den gesperrten Karten der Startseite ------------------ */
+.grid-sep {
+  grid-column: 1 / -1;
+  margin: .9rem 0 -.2rem;
+  padding-top: .9rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .82rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .07em;
 }
