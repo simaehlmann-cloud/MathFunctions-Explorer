@@ -146,6 +146,17 @@ jobs:
             echo '::error::android/app/build.gradle fehlt - npx cap add android ist fehlgeschlagen'
             exit 1
           }
+
+          # Launcher-Icon. `npx cap add android` legt die STANDARD-Icons von
+          # Capacitor an - ohne diesen Schritt traegt die installierte App das
+          # Capacitor-Logo statt unseres. Die Saetze liegen fertig im Repo
+          # (tools/make_android_icons.py), damit der Server kein Bildwerkzeug
+          # braucht.
+          RES="android-res/${{ matrix.edition }}"
+          test -d "$RES" || { echo "::error::$RES fehlt - python3 tools/make_android_icons.py ausfuehren"; exit 1; }
+          cp -r "$RES/." android/app/src/main/res/
+          echo 'Launcher-Icons uebernommen:'
+          ls android/app/src/main/res/mipmap-xxxhdpi/
           # Capacitor schreibt versionCode 1 / versionName "1.0" in die Vorlage.
           sed -i -E "s/versionCode( *=)? *[0-9]+/versionCode \1 ${{ steps.meta.outputs.code }}/" android/app/build.gradle
           sed -i -E "s/versionName( *=)? *\"[^\"]*\"/versionName \1 \"${{ steps.meta.outputs.version }}\"/" android/app/build.gradle
