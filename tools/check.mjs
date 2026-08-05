@@ -155,6 +155,44 @@ for (const [themeName, pal] of [['hell', lightPal], ['dunkel', darkPal]]) {
   }
 }
 
+/* --- 6 · Workflows -------------------------------------------------------
+   Zwei Fehler, die den Android-Build zuverlaessig zum Absturz bringen und
+   beide schon einmal passiert sind:
+
+   a) `cache: gradle` bei actions/setup-java. Die Action bildet den
+      Cache-Schluessel aus vorhandenen Gradle-Dateien und BRICHT AB, wenn sie
+      keine findet. Der Ordner android/ ist bei uns aber erzeugt, nicht
+      eingecheckt - zum Zeitpunkt von setup-java gibt es ihn noch nicht.
+   b) Actions, die noch auf Node 20 laufen. Node 20 wurde im Juni 2026
+      abgeloest und faellt im Herbst 2026 weg. */
+const MIN_MAJOR = {
+  'actions/checkout': 5, 'actions/setup-node': 5, 'actions/setup-java': 5,
+  'actions/cache': 5, 'actions/upload-artifact': 6, 'actions/download-artifact': 7
+};
+
+for (const wf of ['.github/workflows/android.yml', '.github/workflows/pages.yml']) {
+  if (!(await exists(wf))) continue;
+  const lines = (await read(wf)).split('\n');
+  let currentUses = null, currentIndent = 0;
+  for (const line of lines) {
+    const uses = line.match(/^(\s*)-?\s*uses:\s*([\w./-]+)@v(\d+)/);
+    if (uses) {
+      currentUses = uses[2];
+      currentIndent = uses[1].length;
+      const min = MIN_MAJOR[uses[2]];
+      if (min && Number(uses[3]) < min) {
+        note(`${wf}: ${uses[2]}@v${uses[3]} laeuft noch auf Node 20 - mindestens v${min} verwenden`);
+      }
+      continue;
+    }
+    // Ein Schritt endet, sobald die Einrueckung wieder abnimmt.
+    if (line.trim() && line.search(/\S/) <= currentIndent) { currentUses = null; continue; }
+    if (currentUses?.startsWith('actions/setup-') && /^\s*cache:\s*\S/.test(line)) {
+      note(`${wf}: ${currentUses} mit "${line.trim()}" - bricht ab, wenn die Dateien erst im Lauf entstehen`);
+    }
+  }
+}
+
 /* --- Ergebnis ------------------------------------------------------------ */
 if (problems.length) {
   console.error(`${problems.length} Befund(e):`);
