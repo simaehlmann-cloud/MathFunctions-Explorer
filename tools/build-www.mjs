@@ -1,89 +1,131 @@
-/**
- * tools/build-www.mjs
- * --------------------------------------------------------------------------
- * Sammelt die Web-Dateien in ./www - das ist der Ordner, den Capacitor in die
- * Android-App kopiert. Das Repo selbst bleibt flach, damit GitHub Pages
- * weiterhin direkt von der Wurzel ausliefern kann.
- *
- *     node tools/build-www.mjs          -> Vollversion
- *     node tools/build-www.mjs lite     -> Lite-Ausgabe
- *
- * Die Lite-Ausgabe entsteht durch genau drei Textersetzungen. Es gibt bewusst
- * keinen zweiten Quellcodezweig: zwei Zweige laufen erfahrungsgemaess
- * innerhalb weniger Wochen auseinander.
- *
- * Keine Abhaengigkeiten - laeuft mit blossem Node ab Version 18.
- */
-import { cp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+/* ==========================================================================
+   tools/build-www.mjs
+   --------------------------------------------------------------------------
+   Sammelt die Web-Dateien nach www/ - dem Ordner, den Capacitor in die
+   Android-App packt. Zwei Ausgaben aus EINEM Quellcodezweig:
+
+     node tools/build-www.mjs          Pro
+     node tools/build-www.mjs lite     Lite
+
+   Fuer Lite nimmt das Skript genau vier Eingriffe vor:
+     1. js/licence.js  -> DEV_EDITION = 'lite'
+     2. index.html     -> Verweis auf manifest-lite.webmanifest
+     3. index.html     -> die Icon-Verweise auf icon-lite-*
+     4. sw.js          -> Cache-Name bekommt das Suffix, damit ein Wechsel
+                          zwischen den Ausgaben nicht auf altem Bestand sitzt
+
+   Es gibt bewusst keinen zweiten Zweig: zwei Zweige laufen erfahrungsgemaess
+   innerhalb weniger Wochen auseinander.
+   ========================================================================== */
+import { readFile, writeFile, mkdir, rm, cp, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'www');
-const flavour = process.argv[2] === 'lite' ? 'lite' : 'full';
 
-/** Was in die App gehoert. Alles andere (README, .github, tools, node_modules)
- *  bleibt aussen vor. */
-const ASSETS = [
+/* Alles, was in die App gehoert. Wer eine Datei ergaenzt, traegt sie HIER
+   und in sw.js ein - sonst fehlt sie offline. */
+const FILES = [
   'index.html',
   'style.css',
+  'recht.css',
+  'impressum.html',
+  'datenschutz.html',
+  'ueber.html',
   'sw.js',
-  'js',
-  'icons'
+  'js/licence.js',
+  'js/billing.js',
+  'js/i18n.js',
+  'js/functions.js',
+  'js/graph.js',
+  'js/nav.js',
+  'js/ui.js',
+  'js/qr.js',
+  'js/quiz.js',
+  'js/app.js'
 ];
 
+const ICONS_PRO = [
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'icons/icon-maskable-512.png'
+];
+const ICONS_LITE = [
+  'icons/icon-lite-192.png',
+  'icons/icon-lite-512.png',
+  'icons/icon-lite-maskable-512.png'
+];
+
+const exists = (p) => access(p, constants.R_OK).then(() => true, () => false);
+
 async function main() {
+  const flavour = (process.argv[2] || 'pro').toLowerCase();
+  if (!['pro', 'lite'].includes(flavour)) {
+    throw new Error(`Unbekannte Ausgabe "${flavour}". Erlaubt sind pro und lite.`);
+  }
+  const lite = flavour === 'lite';
+
+  // Fehlende Quelldatei ist ein Abbruchgrund. Ein www/ mit Loechern faellt
+  // sonst erst im Emulator auf.
+  const icons = lite ? ICONS_LITE : ICONS_PRO;
+  const manifest = lite ? 'manifest-lite.webmanifest' : 'manifest.webmanifest';
+  const missing = [];
+  for (const f of [...FILES, ...icons, manifest]) {
+    if (!(await exists(path.join(ROOT, f)))) missing.push(f);
+  }
+  if (missing.length) throw new Error('Diese Dateien fehlen:\n  ' + missing.join('\n  '));
+
   await rm(OUT, { recursive: true, force: true });
-  await mkdir(OUT, { recursive: true });
+  await mkdir(path.join(OUT, 'js'), { recursive: true });
+  await mkdir(path.join(OUT, 'icons'), { recursive: true });
 
-  for (const asset of ASSETS) {
-    const from = path.join(ROOT, asset);
-    if (!existsSync(from)) throw new Error(`Fehlt: ${asset}`);
-    await cp(from, path.join(OUT, asset), { recursive: true });
+  for (const f of FILES) await cp(path.join(ROOT, f), path.join(OUT, f));
+  for (const f of icons) await cp(path.join(ROOT, f), path.join(OUT, f));
+
+  // In www liegt genau EIN Manifest, immer unter demselben Namen. So muss
+  // index.html im Lite-Fall nur einen Namen ersetzen und der Service Worker
+  // laedt nie eine Datei, die es nicht gibt.
+  await cp(path.join(ROOT, manifest), path.join(OUT, 'manifest.webmanifest'));
+
+  if (lite) {
+    // 1 · Lizenzweiche
+    const licPath = path.join(OUT, 'js/licence.js');
+    let lic = await readFile(licPath, 'utf8');
+    const before = lic;
+    lic = lic.replace(/const DEV_EDITION = '(?:pro|lite)';/, "const DEV_EDITION = 'lite';");
+    if (lic === before) throw new Error('DEV_EDITION nicht gefunden - js/licence.js geaendert?');
+    // Die Anwendungskennung der Lite-Ausgabe endet auf .lite; der Verweis in
+    // den Store muss aber auf die PRO-Kennung zeigen. Deshalb wird hier
+    // absichtlich nichts an PRO_APP_ID geaendert.
+    await writeFile(licPath, lic);
+
+    // 2 + 3 · Icons in index.html
+    const htmlPath = path.join(OUT, 'index.html');
+    let html = await readFile(htmlPath, 'utf8');
+    html = html.replace(/icons\/icon-(192|512|maskable-512)\.png/g, 'icons/icon-lite-$1.png');
+    html = html.replace(/<title>[^<]*<\/title>/, '<title>MathFunctions Explorer Lite</title>');
+    await writeFile(htmlPath, html);
   }
 
-  const manifestSrc = flavour === 'lite' ? 'manifest-lite.webmanifest' : 'manifest.webmanifest';
-  await cp(path.join(ROOT, manifestSrc), path.join(OUT, 'manifest.webmanifest'));
-
-  if (flavour === 'lite') {
-    // 1) Lizenzweiche umstellen
-    const lic = path.join(OUT, 'js/licence.js');
-    let src = await readFile(lic, 'utf8');
-    const before = src;
-    src = src.replace(/const DEV_EDITION = '(pro|lite)';/, "const DEV_EDITION = 'lite';");
-    if (src === before) throw new Error('DEV_EDITION nicht gefunden - js/licence.js geaendert?');
-    await writeFile(lic, src);
-
-    // 2) Icons der Lite-Ausgabe auf die Standardnamen ziehen, damit
-    //    index.html und Manifest unveraendert bleiben koennen
-    for (const size of ['192', '512']) {
-      await cp(path.join(ROOT, `icons/icon-lite-${size}.png`), path.join(OUT, `icons/icon-${size}.png`));
-    }
-    await cp(path.join(ROOT, 'icons/icon-lite-maskable-512.png'),
-             path.join(OUT, 'icons/icon-maskable-512.png'));
-
-    // 3) Anwendungsnamen im Manifest anpassen (steht dort schon, aber die
-    //    Datei heisst jetzt manifest.webmanifest - sicherheitshalber pruefen)
-    const man = JSON.parse(await readFile(path.join(OUT, 'manifest.webmanifest'), 'utf8'));
-    if (!man.name.includes('Lite')) {
-      man.name += ' Lite';
-      await writeFile(path.join(OUT, 'manifest.webmanifest'), JSON.stringify(man, null, 2));
-    }
-  }
-
-  // Der Service Worker laedt in der App aus dem Cache derselben Herkunft.
-  // Die Cache-Version bekommt die Ausgabe angehaengt, damit ein Wechsel
-  // zwischen Lite und Voll nicht auf altem Bestand sitzen bleibt.
+  // 4 · Cache-Name je Ausgabe
   const swPath = path.join(OUT, 'sw.js');
   let sw = await readFile(swPath, 'utf8');
   sw = sw.replace(/const CACHE = '([^']+)';/, (_, v) => `const CACHE = '${v}-${flavour}';`);
-  // In www liegt nur ein Manifest, der zweite Eintrag wuerde 404 liefern und
-  // die gesamte Installation des Service Workers scheitern lassen.
-  sw = sw.replace(/\n\s*'\.\/manifest-lite\.webmanifest',/, '');
-  sw = sw.replace(/,\n\s*'\.\/icons\/icon-lite-[^']+'/g, '');
+  if (lite) sw = sw.replace(/icons\/icon-(192|512|maskable-512)\.png/g, 'icons/icon-lite-$1.png');
   await writeFile(swPath, sw);
 
-  console.log(`www/ erzeugt (${flavour}).`);
+  // Gegenprobe: jede Datei, die der Service Worker vorhaelt, muss auch da
+  // sein. Ein einziger 404 laesst die gesamte Installation scheitern.
+  const listed = [...sw.matchAll(/'\.\/([^']*)'/g)].map(m => m[1]).filter(Boolean);
+  const broken = [];
+  for (const f of listed) {
+    if (!(await exists(path.join(OUT, f)))) broken.push(f);
+  }
+  if (broken.length) throw new Error('Im Service Worker gelistet, aber nicht in www/:\n  ' + broken.join('\n  '));
+
+  console.log(`www/ erzeugt (${flavour}), ${FILES.length + icons.length + 1} Dateien.`);
 }
 
-main().catch(err => { console.error(err.message); process.exit(1); });
+main().catch(err => { console.error('Build abgebrochen: ' + err.message); process.exit(1); });
