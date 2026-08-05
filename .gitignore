@@ -1,0 +1,29 @@
+# Betriebssystem
+.DS_Store
+Thumbs.db
+
+# Editoren
+.vscode/
+.idea/
+*.swp
+
+# Abhaengigkeiten und Build-Ergebnisse
+node_modules/
+www/
+
+# Android: das Projekt selbst GEHOERT ins Repo (der Workflow braucht es),
+# nur die Bauergebnisse und lokalen Pfade bleiben draussen.
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/local.properties
+android/capacitor-cordova-android-plugins/
+.gradle/
+
+# Signaturschluessel niemals einchecken. Geht er verloren, laesst sich die
+# App im Play Store nicht mehr aktualisieren - Sicherungskopie ausserhalb
+# von GitHub aufbewahren.
+*.keystore
+*.jks
+key.properties
