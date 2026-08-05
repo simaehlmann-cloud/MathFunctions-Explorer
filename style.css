@@ -865,3 +865,25 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 /* Der Reiter "Wertetabelle" fuehrt dann ins Leere - er bleibt sichtbar,
    wird aber als bereits geoeffnet ausgewiesen. */
 #screen-app.is-split .tab-btn[aria-disabled="true"] { opacity: .5; }
+
+/* ==========================================================================
+   [hidden] muss gewinnen
+   --------------------------------------------------------------------------
+   FEHLER, den das gekostet hat: Die Browser-Regel [hidden] { display: none }
+   steht im UA-Stylesheet. Jede Autoren-Regel mit display schlaegt sie -
+   unabhaengig von der Spezifitaet. Damit waren drei Elemente DAUERHAFT
+   sichtbar, obwohl das Attribut gesetzt war:
+
+     .update-bar   display: flex        -> "Eine neue Fassung steht bereit"
+                                           stand immer da, auch in der App,
+                                           auch ohne Service Worker
+     .pro-box      display: grid        -> der Lite-Hinweis erschien auch in
+                                           der Pro-Ausgabe
+     .chip         display: inline-flex -> der Schalter "Wertetabelle daneben"
+                                           erschien auch auf schmalen Geraeten
+
+   Diese Regel steht bewusst ganz am Ende der Datei und mit !important. Sie
+   ist die einzige Stelle im Stylesheet, an der !important gerechtfertigt ist:
+   "verborgen" darf von nichts uebersteuert werden.
+   ========================================================================== */
+[hidden] { display: none !important; }

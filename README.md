@@ -1,4 +1,4 @@
-# MathFunctions Explorer v6.5
+# MathFunctions Explorer v6.5.1
 
 Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
 Läuft vollständig im Browser oder als Android-App — ohne Server, ohne Konto,
@@ -14,6 +14,32 @@ python3 -m http.server 8000     # oder: npm run serve
 
 Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
 funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## Was in v6.5.1 berichtigt wurde
+
+**Verborgene Elemente waren nicht verborgen.** Die Browser-Regel
+`[hidden] { display: none }` steht im UA-Stylesheet und verliert gegen *jede*
+Autoren-Regel, die `display` setzt — unabhängig von der Spezifität. Drei
+Elemente waren dadurch dauerhaft sichtbar:
+
+| Element | Regel | Folge |
+|---|---|---|
+| `.update-bar` | `display: flex` | „Eine neue Fassung steht bereit" stand **immer** da — auch in der App, auch ohne Service Worker |
+| `.pro-box` | `display: grid` | der Lite-Hinweis samt Kaufknopf erschien auch in der **Pro**-Ausgabe |
+| `.chip` | `display: inline-flex` | der Schalter „Wertetabelle daneben" erschien auch auf schmalen Geräten |
+
+Behoben durch eine einzige Regel am Ende des Stylesheets:
+`[hidden] { display: none !important; }`. Das ist die einzige Stelle, an der
+`!important` gerechtfertigt ist — „verborgen" darf von nichts übersteuert
+werden.
+
+**Der Klickdurchlauf lädt jetzt das Stylesheet.** Bisher prüfte er nur die
+Eigenschaft `.hidden` und meldete „verborgen", während das Element im Bild
+stand. Mit geladenem Stylesheet wird die tatsächliche Darstellung über
+`getComputedStyle` geprüft; entfernt man die Regel, schlagen genau die drei
+betroffenen Elemente an.
 
 ---
 

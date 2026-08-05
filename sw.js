@@ -14,7 +14,7 @@
    ========================================================================== */
 'use strict';
 
-const CACHE = 'mfe-v6.5.0';
+const CACHE = 'mfe-v6.5.1';
 const ASSETS = [
   './',
   './index.html',
