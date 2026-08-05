@@ -1,0 +1,177 @@
+/* ==========================================================================
+   recht.css · Impressum, Datenschutz und Über-Seite des MathFunctions Explorer
+   --------------------------------------------------------------------------
+   Bewusst eigenständig gehalten: Diese Seiten müssen auch dann noch lesbar
+   sein, wenn style.css der App sich ändert. Keine Webfonts, keine externen
+   Ressourcen — die Seiten liegen in der App und öffnen ohne Netzverbindung.
+   ========================================================================== */
+
+:root {
+  --ink:        #14181f;
+  --ink-soft:   #4a5261;
+  --paper:      #ffffff;
+  --paper-soft: #f4f6fa;
+  --rule:       #dde2ea;
+  --accent:     #2563eb;   /* wie die Geraden-Farbe der App */
+  --c-lin:      #2563eb;
+  --c-quad:     #c026d3;
+  --c-exp:      #0d9488;
+  --c-sin:      #f59e0b;
+  --measure:    46rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:        #e8ecf3;
+    --ink-soft:   #a2acbd;
+    --paper:      #12151b;
+    --paper-soft: #1b1f28;
+    --rule:       #2c323d;
+    --accent:     #7ba4ff;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+  max-width: var(--measure);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overflow-wrap: break-word;
+}
+
+/* ---- Navigation -------------------------------------------------------- */
+
+.nav {
+  font-size: .92rem;
+  color: var(--ink-soft);
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2rem;
+}
+.nav a, .nav strong { white-space: nowrap; }
+.nav strong { color: var(--ink); }
+
+/* ---- Überschriften ----------------------------------------------------- */
+
+h1 {
+  font-size: clamp(1.7rem, 5vw, 2.2rem);
+  line-height: 1.2;
+  letter-spacing: -.015em;
+  margin: 0 0 .35rem;
+}
+
+/* Das einzige gestalterische Zitat aus der App: die vier Funktionsfarben
+   als schmaler Streifen unter dem Titel. */
+h1::after {
+  content: "";
+  display: block;
+  height: 3px;
+  width: 6.5rem;
+  margin-top: .7rem;
+  border-radius: 3px;
+  background: linear-gradient(90deg,
+    var(--c-lin) 0 25%, var(--c-quad) 25% 50%,
+    var(--c-exp) 50% 75%, var(--c-sin) 75% 100%);
+}
+
+h2 {
+  font-size: 1.2rem;
+  letter-spacing: -.01em;
+  margin: 2.6rem 0 .6rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--rule);
+}
+h3 { font-size: 1.02rem; margin: 1.8rem 0 .4rem; }
+
+p { margin: 0 0 1rem; }
+
+.sub { color: var(--ink-soft); font-size: .95rem; margin-bottom: 2rem; }
+
+.hint {
+  font-size: .89rem;
+  color: var(--ink-soft);
+  background: var(--paper-soft);
+  border-left: 3px solid var(--rule);
+  padding: .7rem .9rem;
+  border-radius: 0 6px 6px 0;
+}
+
+.box {
+  background: var(--paper-soft);
+  border-left: 3px solid var(--accent);
+  padding: 1rem 1.1rem;
+  border-radius: 0 8px 8px 0;
+  margin: 0 0 2rem;
+}
+
+/* ---- Listen und Tabellen ----------------------------------------------- */
+
+ul { padding-left: 1.25rem; margin: 0 0 1rem; }
+li { margin-bottom: .3rem; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.4rem;
+  font-size: .93rem;
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: .55rem .6rem;
+  border-bottom: 1px solid var(--rule);
+}
+th { font-weight: 600; }
+thead th, tr:first-child th { border-bottom-width: 2px; }
+table.kv th { width: 9rem; white-space: nowrap; }
+
+/* Auf schmalen Geräten bricht die zweispaltige Tabelle in Blöcke um. */
+@media (max-width: 30rem) {
+  table:not(.kv) tr { display: block; padding: .5rem 0; border-bottom: 1px solid var(--rule); }
+  table:not(.kv) th, table:not(.kv) td { display: block; border: 0; padding: .15rem 0; }
+  table:not(.kv) td:last-child { color: var(--ink-soft); font-size: .88rem; }
+}
+
+/* ---- Sonstiges --------------------------------------------------------- */
+
+a { color: var(--accent); text-underline-offset: .18em; }
+a:focus-visible, .nav a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .88em;
+  background: var(--paper-soft);
+  padding: .1em .35em;
+  border-radius: 4px;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 3.5rem 0 2.5rem;
+}
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-size: .9rem;
+  color: var(--ink-soft);
+}
+
+[lang="en"] h1 { margin-top: 0; }
+
+@media print {
+  body { max-width: none; font-size: 11pt; }
+  .nav, footer { display: none; }
+  a { color: inherit; text-decoration: none; }
+}

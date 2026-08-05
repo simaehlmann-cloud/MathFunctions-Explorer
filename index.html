@@ -20,9 +20,9 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
-<!-- Fuer die Lite-Ausgabe: manifest-lite.webmanifest verlinken und die
-     icon-lite-*.png verwenden (siehe README, Abschnitt "Lite und Pro"). -->
-<meta name="description" content="Interaktiver Funktionenplotter fuer den Mathematikunterricht. Laeuft vollstaendig lokal im Browser.">
+<!-- Die Lite-Ausgabe entsteht automatisch: tools/build-www.mjs tauscht das
+     Manifest und die drei Icon-Verweise. Nicht von Hand aendern. -->
+<meta name="description" content="Interaktiver Funktionenplotter fuer den Mathematikunterricht. Laeuft vollstaendig lokal.">
 <title>MathFunctions Explorer</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
@@ -40,6 +40,7 @@
   <div class="header-controls">
     <button id="btn-undo" class="icon-btn" type="button" data-i18n-title="btn.undo" data-i18n-aria="btn.undo">↶</button>
     <button id="btn-redo" class="icon-btn" type="button" data-i18n-title="btn.redo" data-i18n-aria="btn.redo">↷</button>
+    <button id="btn-beamer" class="icon-btn" type="button" aria-pressed="false" data-i18n-title="a11y.beamer" data-i18n-aria="a11y.beamer">▣</button>
     <button id="btn-theme" class="icon-btn" type="button" data-i18n-title="a11y.theme" data-i18n-aria="a11y.theme">
       <span class="icon-sun" aria-hidden="true">☀</span><span class="icon-moon" aria-hidden="true">☾</span>
     </button>
@@ -73,28 +74,71 @@
 
     <div class="fn-grid">
       <button class="fn-card" type="button" data-category="linear">
-        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 55 L95 8"/></svg>
-        <span class="fn-name" data-i18n="cat.linear">Lineare Funktionen</span>
+        <canvas class="fn-thumb" data-thumb="linear" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.linear"></span>
         <span class="fn-form">f(x) = m·x + b</span>
       </button>
-      <button class="fn-card" type="button" data-category="quadratic">
-        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M8 5 Q50 82 92 5"/></svg>
-        <span class="fn-name" data-i18n="cat.quadratic">Quadratische Funktionen</span>
+      <button class="fn-card" type="button" data-category="quadratic" data-feature="cat.quadratic">
+        <canvas class="fn-thumb" data-thumb="quadratic" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.quadratic"></span>
         <span class="fn-form">f(x) = a·x² + b·x + c</span>
       </button>
+      <button class="fn-card" type="button" data-category="polynomial" data-feature="cat.polynomial">
+        <canvas class="fn-thumb" data-thumb="polynomial" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.polynomial"></span>
+        <span class="fn-form">f(x) = a·x³ + b·x² + c·x + d</span>
+      </button>
       <button class="fn-card" type="button" data-category="exponential">
-        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 56 Q60 54 95 4"/></svg>
-        <span class="fn-name" data-i18n="cat.exponential">Exponentialfunktionen</span>
+        <canvas class="fn-thumb" data-thumb="exponential" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.exponential"></span>
         <span class="fn-form">f(x) = a·b^x + c</span>
       </button>
-      <button class="fn-card" type="button" data-category="trig">
-        <svg class="fn-thumb" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 30 Q17 -8 30 30 T55 30 T80 30 T105 30"/></svg>
-        <span class="fn-name" data-i18n="cat.trig">Trigonometrische Funktionen</span>
+      <button class="fn-card" type="button" data-category="logarithm" data-feature="cat.logarithm">
+        <canvas class="fn-thumb" data-thumb="logarithm" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.logarithm"></span>
+        <span class="fn-form">f(x) = a·ln(x − b) + c</span>
+      </button>
+      <button class="fn-card" type="button" data-category="trig" data-feature="cat.trig">
+        <canvas class="fn-thumb" data-thumb="trig" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.trig"></span>
         <span class="fn-form">f(x) = a·sin(b·(x − c)) + d</span>
+      </button>
+      <button class="fn-card" type="button" data-category="root" data-feature="cat.root">
+        <canvas class="fn-thumb" data-thumb="root" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.root"></span>
+        <span class="fn-form">f(x) = a·√(x − b) + c</span>
+      </button>
+      <button class="fn-card" type="button" data-category="absolute" data-feature="cat.absolute">
+        <canvas class="fn-thumb" data-thumb="absolute" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.absolute"></span>
+        <span class="fn-form">f(x) = a·|x − b| + c</span>
+      </button>
+      <button class="fn-card" type="button" data-category="rational" data-feature="cat.rational">
+        <canvas class="fn-thumb" data-thumb="rational" aria-hidden="true"></canvas>
+        <span class="fn-name" data-i18n="cat.rational"></span>
+        <span class="fn-form">f(x) = a/(x − b) + c</span>
       </button>
     </div>
 
-    <p class="home-note" data-i18n="home.privacy">Laeuft vollstaendig auf deinem Geraet. Keine Anmeldung, keine Datenuebertragung.</p>
+    <h2 class="home-sub" data-i18n="home.more">Weiter geht es hier</h2>
+    <div class="fn-grid">
+      <button class="fn-card tool-card" type="button" id="card-quizzes" data-feature="quizBuilder">
+        <span class="tool-mark" aria-hidden="true">?</span>
+        <span class="fn-name" data-i18n="home.quizzes">Eigene Quizze</span>
+        <span class="fn-desc" data-i18n="home.quizzesDesc">Aufgaben zusammenstellen, speichern und als Link weitergeben.</span>
+      </button>
+      <button class="fn-card tool-card" type="button" id="card-info">
+        <span class="tool-mark" aria-hidden="true">i</span>
+        <span class="fn-name" data-i18n="home.about">Über MathFunctions Explorer</span>
+        <span class="fn-desc" data-i18n="home.aboutDesc">Was die App kann, für wen sie gedacht ist, was Lite und Pro unterscheidet.</span>
+      </button>
+    </div>
+
+    <p class="home-note" data-i18n="home.privacy">Läuft vollständig auf deinem Gerät. Keine Anmeldung, keine Datenübertragung.</p>
+    <p class="home-legal">
+      <a href="impressum.html" data-i18n="legal.imprint">Impressum</a> ·
+      <a href="datenschutz.html" data-i18n="legal.privacy">Datenschutz</a>
+    </p>
   </div>
 </main>
 
@@ -107,25 +151,41 @@
     <button class="tab-btn" role="tab" id="tab-btn-table" tabindex="-1" aria-controls="tab-table"
             aria-selected="false" data-tab="table" data-i18n="tab.table">Wertetabelle</button>
     <button class="tab-btn" role="tab" id="tab-btn-quiz" tabindex="-1" aria-controls="tab-quiz"
-            aria-selected="false" data-tab="quiz" data-i18n="tab.quiz">Ueben</button>
+            aria-selected="false" data-tab="quiz" data-i18n="tab.quiz">Üben</button>
   </nav>
 
-  <!-- ---------- EXPLORER ---------- -->
+  <!-- ---------- EXPLORER ----------
+       Reihenfolge ist Absicht: Koordinatensystem, Gleichung, Regler. Alle
+       drei stehen am Telefon gleichzeitig im Bild; das Koordinatensystem
+       bleibt zusaetzlich beim Scrollen oben stehen. Was seltener gebraucht
+       wird, liegt darunter in aufklappbaren Abschnitten. -->
   <section id="tab-explorer" class="tab-panel is-active" role="tabpanel" aria-labelledby="tab-btn-explorer">
 
     <div class="canvas-panel">
       <div class="canvas-stage">
-        <canvas id="graph-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.canvas"></canvas>
+        <!-- tabindex: das Koordinatensystem ist bedienbar, also muss es
+             auch mit der Tastatur erreichbar sein. -->
+        <canvas id="graph-canvas" class="graph-canvas" role="img" tabindex="0"
+                aria-describedby="graph-desc" data-i18n-aria="a11y.canvas"></canvas>
+        <!-- Fuer Screenreader: eine Beschreibung dessen, was zu sehen ist.
+             Sichtbar ist sie nicht - der Graph zeigt es ja bereits. -->
+        <p id="graph-desc" class="sr-only" aria-live="polite"></p>
         <output id="readout" class="readout" aria-live="polite"></output>
+
+        <!-- Zoomen geht auch mit zwei Fingern, Mausrad und Doppeltipp.
+             Die Knoepfe sind fuer alle Faelle, in denen das nicht geht. -->
+        <div class="canvas-tools">
+          <button id="btn-zoom-in"  class="map-btn" type="button" data-i18n-title="btn.zoomIn"  data-i18n-aria="btn.zoomIn">+</button>
+          <button id="btn-zoom-out" class="map-btn" type="button" data-i18n-title="btn.zoomOut" data-i18n-aria="btn.zoomOut">−</button>
+          <button id="btn-fit"      class="map-btn" type="button" data-i18n-title="btn.fit"     data-i18n-aria="btn.fit">⤢</button>
+          <button id="btn-reset-view" class="map-btn" type="button" data-i18n-title="btn.resetView" data-i18n-aria="btn.resetView">⌂</button>
+        </div>
       </div>
 
-      <div class="canvas-toolbar">
-        <label class="chip"><input type="checkbox" id="opt-helpers" checked><span data-i18n="opt.helpers">Hilfslinien</span></label>
-        <label class="chip"><input type="checkbox" id="opt-roots"><span data-i18n="opt.roots">Nullstellen</span></label>
-        <label class="chip"><input type="checkbox" id="opt-yint"><span data-i18n="opt.yint">y-Achsenabschnitt</span></label>
-        <label class="chip"><input type="checkbox" id="opt-vertex"><span data-i18n="opt.vertex">Scheitelpunkt</span></label>
-        <label class="chip"><input type="checkbox" id="opt-intersections"><span data-i18n="opt.intersections">Schnittpunkte</span></label>
-        <label class="chip"><input type="checkbox" id="opt-drag"><span data-i18n="opt.drag">Graph anfassen</span></label>
+      <div class="live-panel">
+        <div id="equations" class="equations"></div>
+        <div id="parameters-container" class="sliders compact"></div>
+        <p class="hint" data-i18n="hint.params">Tippe auf einen Parameter, um Buchstabe und Bedeutung zu ändern.</p>
       </div>
     </div>
 
@@ -138,33 +198,56 @@
         <select id="function-form"></select>
       </div>
 
-      <div class="equation-card">
-        <div id="equations" class="equations"></div>
-        <p class="hint" data-i18n="hint.params">Tippe auf einen Parameter, um Buchstabe und Bedeutung zu aendern.</p>
-      </div>
-
-      <div id="parameters-container" class="sliders"></div>
-      <p class="hint" data-i18n="hint.numbers">Komma und Punkt gehen beide. Auch 3/4 oder pi/2.</p>
-
-      <button id="btn-transform" class="btn-ghost" type="button" hidden data-i18n="btn.transform">Transformation abspielen</button>
+      <details class="panel-section" open>
+        <summary data-i18n="lbl.show">Im Graphen anzeigen</summary>
+        <div class="canvas-toolbar">
+          <label class="chip"><input type="checkbox" id="opt-helpers" checked><span data-i18n="opt.helpers">Hilfslinien</span></label>
+          <label class="chip"><input type="checkbox" id="opt-roots"><span data-i18n="opt.roots">Nullstellen</span></label>
+          <label class="chip"><input type="checkbox" id="opt-yint"><span data-i18n="opt.yint">y-Achsenabschnitt</span></label>
+          <label class="chip"><input type="checkbox" id="opt-vertex"><span data-i18n="opt.vertex">Scheitelpunkt</span></label>
+          <label class="chip"><input type="checkbox" id="opt-intersections"><span data-i18n="opt.intersections">Schnittpunkte</span></label>
+          <label class="chip"><input type="checkbox" id="opt-drag"><span data-i18n="opt.drag">Graph anfassen</span></label>
+          <label class="chip"><input type="checkbox" id="opt-derivative"><span data-i18n="opt.derivative">Ableitung f′</span></label>
+          <label class="chip"><input type="checkbox" id="opt-tangent"><span data-i18n="opt.tangent">Tangente</span></label>
+          <label class="chip"><input type="checkbox" id="opt-trace"><span data-i18n="opt.trace">Punkt verfolgen</span></label>
+        </div>
+      </details>
 
       <details class="panel-section">
         <summary data-i18n="lbl.scale">Achsen und Ansicht</summary>
-        <div class="slider-row">
-          <label for="scale-x">x: ±<span id="val-scale-x">10</span></label>
-          <input type="range" id="scale-x" min="1" max="50" step="1" value="10">
+
+        <div class="preset-row" role="group" data-i18n-aria="lbl.presets">
+          <button class="preset-btn" type="button" data-preset="standard" data-i18n="preset.standard">Standard</button>
+          <button class="preset-btn" type="button" data-preset="trig" data-i18n="preset.trig">Trigonometrie</button>
+          <button class="preset-btn" type="button" data-preset="growth" data-i18n="preset.growth">Wachstum</button>
+          <button class="preset-btn" type="button" data-preset="firstQuadrant" data-i18n="preset.firstQuadrant">Nur positiv</button>
+          <button class="preset-btn" type="button" data-preset="fine" data-i18n="preset.fine">Feinbereich</button>
         </div>
-        <div class="slider-row">
-          <label for="scale-y">y: ±<span id="val-scale-y">10</span></label>
-          <input type="range" id="scale-y" min="1" max="50" step="1" value="10">
+
+        <!-- Vier Zahlen statt zweier Halbweiten: damit sind auch 0 bis 10
+             und 0 bis 1000 moeglich. -->
+        <div class="view-grid">
+          <div class="form-row"><label for="view-x0" data-i18n="lbl.xFrom">x von</label>
+            <input type="text" inputmode="decimal" autocomplete="off" id="view-x0"></div>
+          <div class="form-row"><label for="view-x1" data-i18n="lbl.to">bis</label>
+            <input type="text" inputmode="decimal" autocomplete="off" id="view-x1"></div>
+          <div class="form-row"><label for="view-y0" data-i18n="lbl.yFrom">y von</label>
+            <input type="text" inputmode="decimal" autocomplete="off" id="view-y0"></div>
+          <div class="form-row"><label for="view-y1" data-i18n="lbl.to">bis</label>
+            <input type="text" inputmode="decimal" autocomplete="off" id="view-y1"></div>
         </div>
+        <p class="hint" data-i18n="hint.view">Zwei Finger zum Zoomen, ziehen zum Verschieben. Am Rechner: Mausrad und Ziehen.</p>
+
         <label class="chip"><input type="checkbox" id="opt-piAxis"><span data-i18n="opt.piAxis">x-Achse in π</span></label>
-        <button id="btn-reset-view" class="btn-ghost" type="button" data-i18n="btn.resetView">Ansicht zuruecksetzen</button>
+        <label class="chip"><input type="checkbox" id="opt-snap" checked><span data-i18n="opt.snap">Regler auf glatte Werte fangen</span></label>
       </details>
+
+      <button id="btn-transform" class="btn-ghost" type="button" hidden data-i18n="btn.transform">Transformation abspielen</button>
 
       <div class="action-row">
         <button id="btn-export" class="btn-secondary" type="button" data-i18n="btn.export">Als Bild speichern</button>
         <button id="btn-share" class="btn-secondary" type="button" data-i18n="btn.share">Link kopieren</button>
+        <button id="btn-print" class="btn-secondary" type="button" data-i18n="btn.print">Arbeitsblatt drucken</button>
       </div>
     </div>
   </section>
@@ -180,7 +263,11 @@
         <input type="text" inputmode="decimal" autocomplete="off" id="tbl-step" value="1"></div>
       <button id="btn-gen-table" class="btn-primary" type="button" data-i18n="btn.calcTable">Tabelle berechnen</button>
     </div>
-    <p class="hint" data-i18n="hint.numbers">Komma und Punkt gehen beide. Auch 3/4 oder pi/2.</p>
+    <div class="canvas-toolbar">
+      <label class="chip"><input type="checkbox" id="opt-diff"><span data-i18n="opt.diff">Differenzen Δy</span></label>
+      <label class="chip"><input type="checkbox" id="opt-quot"><span data-i18n="opt.quot">Quotienten</span></label>
+    </div>
+    <p class="hint" data-i18n="hint.diff">Konstante Differenz heißt linear, konstanter Quotient heißt exponentiell.</p>
     <p id="table-msg" class="msg" role="status"></p>
     <div class="table-wrapper">
       <table id="values-table"><thead><tr></tr></thead><tbody></tbody></table>
@@ -188,7 +275,7 @@
     <button id="btn-copy-table" class="btn-secondary" type="button" data-i18n="btn.copyTable">Tabelle kopieren</button>
   </section>
 
-  <!-- ---------- UEBEN ---------- -->
+  <!-- ---------- ÜBEN ---------- -->
   <section id="tab-quiz" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-quiz">
 
     <div id="quiz-modes" class="segmented" role="group">
@@ -199,7 +286,7 @@
     <!-- Modus 1: Gleichung dem Graphen zuordnen -->
     <div id="mode-match">
       <div class="quiz-head">
-        <h2 data-i18n="quiz.title">Welche Gleichung gehoert zum Graphen?</h2>
+        <h2 data-i18n="quiz.title">Welche Gleichung gehört zum Graphen?</h2>
         <p class="quiz-score"><span data-i18n="quiz.score">Punkte</span>:
           <strong id="quiz-score">0</strong> / <span id="quiz-total">0</span></p>
       </div>
@@ -211,8 +298,9 @@
         </div>
       </div>
       <div class="action-row">
-        <button id="btn-next-quiz" class="btn-primary" type="button" data-i18n="btn.nextQuiz">Naechste Aufgabe</button>
+        <button id="btn-next-quiz" class="btn-primary" type="button" data-i18n="btn.nextQuiz">Nächste Aufgabe</button>
         <button id="btn-own-quiz" class="btn-secondary" type="button" data-i18n="btn.ownQuiz">Aufgabe aus Explorer erstellen</button>
+        <button id="btn-goto-quizzes" class="btn-secondary" type="button" data-i18n="home.quizzes">Eigene Quizze</button>
       </div>
     </div>
 
@@ -224,17 +312,150 @@
       <div class="quiz-body">
         <canvas id="practice-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.practiceCanvas"></canvas>
         <div>
-          <div id="practice-params" class="sliders"></div>
+          <div id="practice-params" class="sliders compact"></div>
           <p id="practice-feedback" class="feedback" role="status" aria-live="polite"></p>
         </div>
       </div>
       <div class="action-row">
-        <button id="btn-check" class="btn-primary" type="button" data-i18n="btn.check">Pruefen</button>
+        <button id="btn-check" class="btn-primary" type="button" data-i18n="btn.check">Prüfen</button>
         <button id="btn-new-task" class="btn-secondary" type="button" data-i18n="btn.newTask">Neue Aufgabe</button>
       </div>
     </div>
   </section>
 </div>
+
+<!-- ====================== EIGENE QUIZZE: LISTE ====================== -->
+<main id="screen-quizzes" class="screen">
+  <div class="page-inner">
+    <button class="back-link" type="button" data-back="home" data-i18n="btn.back">Zurück</button>
+    <h1 class="page-title" data-i18n="home.quizzes">Eigene Quizze</h1>
+    <p class="page-lead" data-i18n="quiz.listLead">Stelle eigene Aufgaben zusammen. Alles bleibt auf diesem Gerät; weitergeben kannst du ein Quiz als Link.</p>
+
+    <div class="action-row">
+      <button id="btn-new-quiz" class="btn-primary" type="button" data-i18n="quiz.new">Neues Quiz</button>
+      <button id="btn-random-quiz" class="btn-secondary" type="button" data-feature="randomQuiz" data-i18n="quiz.random">Zufallsquiz erzeugen</button>
+      <button id="btn-import-quiz" class="btn-secondary" type="button" data-i18n="quiz.import">Quiz aus Link laden</button>
+      <button id="btn-backup-save" class="btn-secondary" type="button" data-i18n="quiz.backupSave">Alle Quizze sichern</button>
+      <button id="btn-backup-load" class="btn-secondary" type="button" data-i18n="quiz.backupLoad">Sicherung einlesen</button>
+      <!-- Nur der Auslöser; der Dateidialog gehört dem Betriebssystem. -->
+      <input type="file" id="backup-file" accept="application/json,.json" hidden>
+    </div>
+
+    <!-- Baukasten fuer das Zufallsquiz: Klasse, Umfang, Aufgabenarten -->
+    <section id="random-panel" class="editor-panel" hidden>
+      <h2 data-i18n="quiz.random">Zufallsquiz erzeugen</h2>
+      <div class="form-row">
+        <label for="rnd-category" data-i18n="quiz.rndCategory">Funktionsklasse</label>
+        <select id="rnd-category"></select>
+      </div>
+      <div class="form-row">
+        <label for="rnd-count" data-i18n="quiz.rndCount">Anzahl der Aufgaben</label>
+        <input type="number" id="rnd-count" min="3" max="30" step="1" value="10" inputmode="numeric">
+      </div>
+      <fieldset class="rnd-types">
+        <legend data-i18n="quiz.rndTypes">Aufgabenarten</legend>
+        <div id="rnd-type-list" class="canvas-toolbar"></div>
+      </fieldset>
+      <div class="action-row">
+        <button id="btn-random-make" class="btn-primary" type="button" data-i18n="quiz.rndMake">Erzeugen</button>
+        <button id="btn-random-cancel" class="btn-ghost" type="button" data-i18n="btn.cancel">Abbrechen</button>
+      </div>
+    </section>
+
+    <div id="quiz-list" class="quiz-list"></div>
+  </div>
+</main>
+
+<!-- ====================== EIGENE QUIZZE: EDITOR ====================== -->
+<main id="screen-builder" class="screen">
+  <div class="page-inner">
+    <button class="back-link" type="button" id="btn-builder-back" data-i18n="btn.back">Zurück</button>
+    <h1 class="page-title" data-i18n="quiz.builder">Quiz zusammenstellen</h1>
+
+    <div class="form-row">
+      <label for="builder-title" data-i18n="quiz.titleLabel">Name des Quiz</label>
+      <input type="text" id="builder-title" maxlength="80" autocomplete="off">
+    </div>
+
+    <div class="builder-head">
+      <h2 data-i18n="quiz.tasks">Aufgaben</h2>
+      <span id="builder-count" class="quiz-meta"></span>
+    </div>
+
+    <div id="builder-tasks" class="task-list"></div>
+
+    <div class="action-row">
+      <button id="btn-add-task" class="btn-secondary" type="button" data-i18n="quiz.addTask">Aufgabe hinzufügen</button>
+      <button id="btn-builder-save" class="btn-primary" type="button" data-i18n="quiz.saveQuiz">Quiz speichern</button>
+    </div>
+
+    <section id="builder-editor" class="editor-panel" hidden>
+      <h2 id="editor-heading" data-i18n="quiz.newTask">Neue Aufgabe</h2>
+      <div id="editor-body" class="editor-body"></div>
+      <div class="action-row">
+        <button id="btn-editor-save" class="btn-primary" type="button" data-i18n="quiz.takeTask">Aufgabe übernehmen</button>
+        <button id="btn-editor-cancel" class="btn-ghost" type="button" data-i18n="btn.cancel">Abbrechen</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- ====================== EIGENE QUIZZE: ABSPIELEN ====================== -->
+<main id="screen-play" class="screen">
+  <div class="page-inner">
+    <button class="back-link" type="button" id="btn-play-back" data-i18n="btn.back">Zurück</button>
+    <h1 class="page-title" id="play-title"></h1>
+    <div class="quiz-head">
+      <p id="play-progress" class="quiz-meta"></p>
+      <p class="quiz-score"><span data-i18n="quiz.score">Punkte</span>: <strong id="play-score">0</strong></p>
+    </div>
+
+    <div id="play-body" class="play-body"></div>
+    <p id="play-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+    <div class="action-row">
+      <button id="btn-play-check" class="btn-primary" type="button" data-i18n="btn.check">Prüfen</button>
+      <button id="btn-play-next" class="btn-primary" type="button" hidden data-i18n="btn.nextQuiz">Nächste Aufgabe</button>
+      <button id="btn-play-again" class="btn-secondary" type="button" hidden data-i18n="quiz.again">Noch einmal</button>
+      <button id="btn-play-wrong" class="btn-secondary" type="button" hidden data-i18n="quiz.repeatWrong">Falsche wiederholen</button>
+      <button id="btn-play-copy" class="btn-secondary" type="button" hidden data-i18n="quiz.copyResult">Ergebnis kopieren</button>
+    </div>
+  </div>
+</main>
+
+<!-- ====================== ÜBER DIE APP ====================== -->
+<main id="screen-info" class="screen">
+  <div class="page-inner">
+    <button class="back-link" type="button" data-back="home" data-i18n="btn.back">Zurück</button>
+    <h1 class="page-title" data-i18n="home.about">Über MathFunctions Explorer</h1>
+
+    <p class="page-lead" data-i18n="info.lead">Am Regler ziehen und zusehen, wie sich die Kurve verändert – darum geht es.</p>
+
+    <h2 data-i18n="info.forWhomTitle">Für wen</h2>
+    <p data-i18n="info.forWhom">Für den Mathematikunterricht ab etwa Klasse 7, für Hausaufgaben und für die Vorbereitung auf Klassenarbeiten. Die App ersetzt keinen Unterricht, sondern zeigt, was dort besprochen wurde.</p>
+
+    <h2 data-i18n="info.featuresTitle">Was drin ist</h2>
+    <ul id="info-features" class="info-list"></ul>
+
+    <h2 data-i18n="info.privacyTitle">Offline, ohne Konto, ohne Werbung</h2>
+    <p data-i18n="info.privacy">Alles läuft auf dem Gerät: keine Anmeldung, keine Werbung, kein Tracking, keine Server. Nach der Installation funktioniert die App ohne Internetverbindung.</p>
+
+    <h2 data-i18n="info.editionTitle">Deine Ausgabe</h2>
+    <p id="info-edition" class="edition-line"></p>
+    <div id="info-lite-box" class="pro-box" hidden>
+      <p data-i18n="info.liteHint">In der Lite-Ausgabe sind quadratische und trigonometrische Funktionen, die zweite Kurve, der Nachbau-Modus, eigene Quizze und der Bildexport nicht enthalten.</p>
+      <button id="btn-info-store" class="btn-primary" type="button" data-i18n="btn.getPro">Pro-Ausgabe ansehen</button>
+    </div>
+
+    <h2 data-i18n="info.contactTitle">Rückmeldung</h2>
+    <p data-i18n="info.contact">Fehler, Wünsche und Hinweise aus dem Unterricht sind willkommen.</p>
+    <p class="home-legal">
+      <a href="ueber.html" data-i18n="legal.longAbout">Ausführliche Fassung</a> ·
+      <a href="impressum.html" data-i18n="legal.imprint">Impressum</a> ·
+      <a href="datenschutz.html" data-i18n="legal.privacy">Datenschutz</a>
+    </p>
+  </div>
+</main>
 
 <!-- ====================== PARAMETER-DIALOG ====================== -->
 <!-- Natives <dialog>: Fokus-Trap, ESC und Backdrop kommen vom Browser. -->
@@ -258,6 +479,56 @@
   </form>
 </dialog>
 
+<!-- ====================== PRO-HINWEIS ====================== -->
+<dialog id="pro-dialog" class="dialog">
+  <form method="dialog" class="dialog-inner">
+    <h3 data-i18n="pro.title">Das gehört zur Pro-Ausgabe</h3>
+    <p data-i18n="pro.text">Diese Funktion ist in der kostenlosen Lite-Ausgabe nicht enthalten. Die Pro-Ausgabe schaltet sie einmalig frei – ohne Abo, ohne Werbung.</p>
+    <menu class="dialog-actions">
+      <button value="cancel" class="btn-ghost" type="submit" data-i18n="btn.later">Später</button>
+      <button value="store" id="btn-pro-store" class="btn-primary" type="submit" data-i18n="btn.getPro">Pro-Ausgabe ansehen</button>
+    </menu>
+  </form>
+</dialog>
+
+<!-- ====================== QR-CODE ====================== -->
+<dialog id="qr-dialog" class="dialog">
+  <div class="dialog-inner">
+    <h3 data-i18n="quiz.qrTitle">Quiz weitergeben</h3>
+    <p class="hint" data-i18n="quiz.qrHint">Mit der Kamera abscannen. Der Code enthält das ganze Quiz – es wird nichts an einen Server gesendet.</p>
+    <div class="qr-wrap"><canvas id="qr-canvas" role="img" data-i18n-aria="quiz.qrTitle"></canvas></div>
+    <p id="qr-note" class="msg"></p>
+    <menu class="dialog-actions">
+      <button id="btn-qr-copy" class="btn-secondary" type="button" data-i18n="quiz.share">Link kopieren</button>
+      <button id="btn-qr-close" class="btn-primary" type="button" data-i18n="btn.close">Schließen</button>
+    </menu>
+  </div>
+</dialog>
+
+<!-- Hinweis auf eine neue Fassung. Die Übernahme geschieht erst auf Klick,
+     damit nicht mitten in der Arbeit neu geladen wird. -->
+<div id="update-bar" class="update-bar" role="status" hidden>
+  <span data-i18n="msg.updateReady">Eine neue Fassung steht bereit.</span>
+  <button id="btn-update-now" class="btn-primary" type="button" data-i18n="btn.updateNow">Jetzt laden</button>
+  <button id="btn-update-later" class="btn-ghost" type="button" data-i18n="btn.later">Später</button>
+</div>
+
+<!-- Arbeitsblatt: nur beim Drucken sichtbar, wird vorher gefuellt. -->
+<section id="print-sheet" aria-hidden="true">
+  <header class="ps-head">
+    <h1 id="ps-title">MathFunctions Explorer</h1>
+    <p id="ps-meta"></p>
+  </header>
+  <p id="ps-equation" class="ps-equation"></p>
+  <img id="ps-image" alt="">
+  <div id="ps-table" class="ps-table"></div>
+  <div class="ps-notes">
+    <p id="ps-notes-label"></p>
+    <div class="ps-lines"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+  <footer id="ps-foot" class="ps-foot"></footer>
+</section>
+
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="js/licence.js"></script>
@@ -265,6 +536,10 @@
 <script src="js/i18n.js"></script>
 <script src="js/functions.js"></script>
 <script src="js/graph.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/qr.js"></script>
+<script src="js/quiz.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

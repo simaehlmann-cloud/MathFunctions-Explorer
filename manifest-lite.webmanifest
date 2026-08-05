@@ -1,19 +1,19 @@
 {
   "name": "MathFunctions Explorer Lite",
   "short_name": "Funktionen Lite",
-  "description": "Interaktiver Funktionenplotter für den Mathematikunterricht. Läuft vollständig lokal.",
+  "description": "Interaktiver Funktionenplotter für den Mathematikunterricht. Kostenlos und werbefrei.",
   "lang": "de",
   "dir": "ltr",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0f1a33",
-  "theme_color": "#0f1a33",
+  "background_color": "#f1f5f9",
+  "theme_color": "#f1f5f9",
   "categories": ["education"],
   "icons": [
-    { "src": "icons/icon-lite-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-lite-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-lite-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-lite-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-lite-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

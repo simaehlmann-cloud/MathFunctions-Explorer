@@ -1,305 +1,366 @@
-# MathFunctions Explorer v3
+# MathFunctions Explorer v6
 
-Interaktiver Funktionenplotter für den Mathematikunterricht. Läuft vollständig
-im Browser — ohne Server, ohne Konto, ohne Verbindung zu einer fremden Domain.
+Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
+Läuft vollständig im Browser oder als Android-App — ohne Server, ohne Konto,
+ohne einen einzigen Netzwerkzugriff im laufenden Betrieb.
 
-## Starten
+---
 
+## Schnellstart
+
+```bash
+python3 -m http.server 8000     # oder: npm run serve
 ```
-python3 -m http.server 8000
-```
 
-und `http://localhost:8000` öffnen. Ein einfacher Doppelklick auf
-`index.html` funktioniert auch, aber unter `file://` fehlen drei Dinge, die
-der Browser dort grundsätzlich sperrt: Service Worker (Offline-Betrieb),
-Zwischenablage und Installation als App.
+Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
+funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## Was in v6 neu ist
+
+**Der Zurück-Knopf beendet nicht mehr die App.** Das war ein echter Fehler:
+es gab überhaupt keine Verlaufsverwaltung, nur `replaceState()` für den
+Zustand im Hash. Auf Android schloss Zurück die App — aus dem Quiz-Abspieler,
+aus dem Editor, aus dem Impressum. Jetzt liegt jeder Bildschirm als eigener
+Eintrag im Verlauf (`js/nav.js`), ein offener Dialog wird zuerst geschlossen,
+und erst auf der Startseite beendet Zurück die App — nativ nach zweimaligem
+Drücken.
+
+> Wer später an `syncHash()` arbeitet: `history.replaceState()` **muss**
+> `history.state` weiterreichen. Darin liegt die Wegmarke von `nav.js`.
+
+**Der Arbeitsstand überlebt einen Neustart.** Kurve, Parameter, Ausschnitt,
+Anzeigeoptionen und der zuletzt offene Reiter liegen in einem eigenen
+Speicherschlüssel (30 Tage). Ein Deep Link schlägt den gespeicherten Stand —
+wer einen Link öffnet, will das Verlinkte sehen.
+
+**Quiz-Sicherung als Datei.** Selbst gebaute Quizze lagen ausschließlich im
+`localStorage`. Jetzt: *Alle Quizze sichern* schreibt eine JSON-Datei,
+*Sicherung einlesen* holt sie zurück — jedes Quiz einzeln geprüft, neue
+Kennungen, Bestehendes bleibt.
+
+**QR-Codes sind ein Drittel so groß.** Statt JSON → UTF-8 → Base64 jetzt ein
+festes Binärformat mit Zickzack-Varints. Gemessen an 400 Zufallsquizzen: 69 %
+kürzer. In QR-Versionen:
+
+| Aufgaben | vorher | jetzt |
+|---|---|---|
+| 3 | v17 | **v8** |
+| 10 | v26 | **v13** |
+| 20 | v36 | **v17** |
+| 30 | passte nicht | **v22** |
+
+Links im alten Format bleiben lesbar (Kennbyte `{` gegen `0x4D`).
+
+**Tangens** als zweite trigonometrische Form, mit Polstellen im sichtbaren
+Bereich — der Renderer setzt dort den Stift ab, statt eine senkrechte Linie
+zu ziehen.
+
+**Der Graph ist bedienbar ohne Zeiger und beschreibbar ohne Augen.**
+Pfeiltasten verschieben, `+`/`−` zoomen, `F` passt an, `Pos1` setzt zurück,
+`Alt`+Pfeil bewegt die Tangente. Dazu eine mitlaufende Textbeschreibung für
+Screenreader: Gleichung, Verlauf, Nullstellen, y-Achsenabschnitt,
+Scheitelpunkt, Ausschnitt.
+
+**Arbeitsblatt drucken**: Graph als Bild, Wertetabelle, Namensfeld und
+Linien für den Rechenweg. Eigenes Druck-Stylesheet, alles andere wird
+ausgeblendet.
+
+**Falsche Aufgaben wiederholen** nach der Auswertung, und der Ergebnistext
+nennt jede Aufgabe mit ✓ oder ✗.
+
+**Aktualisierungen übernehmen nicht mehr mitten in der Sitzung.** Der Service
+Worker wartet auf Zustimmung, statt `skipWaiting()` sofort auszuführen.
+
+**Toleranz beim Prüfen** von 2 % auf 1 % relativ, an einer Stelle
+(`MFE.math.tolerance`) statt in drei Kopien. Bei einer Wachstumsaufgabe mit
+y = 1000 hieß 2 % eine erlaubte Abweichung von 20.
+
+**Die Wertetabelle wird nur noch gerechnet, wenn ihr Reiter sichtbar ist.**
+Bei 500 Zeilen und gedrücktem Strg+Z war sie der Flaschenhals.
+
+---
+
+## Was in v5 neu war
+
+**Der Ausschnitt ist frei einstellbar.** Vorher gab es nur ±a auf beiden
+Achsen, y höchstens ±50. Damit war das Beispiel, das die App selbst erklärt —
+*„a = 100 bei einer Bakterienkultur"* — schlicht nicht darstellbar. Jetzt ist
+der Ausschnitt ein Rechteck aus vier Zahlen, dazu:
+
+- Zwei Finger zum Zoomen, Ziehen zum Verschieben, Doppeltipp, Mausrad
+  (mit `Shift` nur waagerecht, mit `Alt` nur senkrecht), `+` und `−`
+- **Passend zoomen** rechnet den y-Bereich aus den tatsächlichen Werten aus.
+  Ausreißer an Polstellen fallen über Quantile heraus, damit eine Hyperbel
+  den Bereich nicht sprengt.
+- Voreinstellungen: Standard, Trigonometrie (−2π…2π), Wachstum (0…1000),
+  Nur positiv, Feinbereich
+- Achsenpfeile und die Beschriftungen *x* und *y*, Nachkommastellen der
+  Achsenteilung passen sich dem Zoom an
+
+**Fünf neue Funktionsklassen**: ganzrational dritten Grades, Wurzel, Betrag,
+Logarithmus, gebrochenrational. Neun statt vier. Der Renderer setzt an
+Polstellen und Definitionslücken den Stift ab, statt eine senkrechte Linie zu
+ziehen; die Nullstellensuche unterscheidet einen Vorzeichenwechsel *durch*
+null von einem Sprung *über* null.
+
+**Ableitung und Tangente.** f′ als gestrichelte Kurve, dazu ein verschiebbarer
+Tangentenpunkt, der die Steigung anzeigt. Numerischer zentraler
+Differenzenquotient — analytische Ableitungen für jede Form zu pflegen liefe
+über kurz oder lang auseinander.
+
+**Trace**: mit dem Finger am Graphen entlang, Koordinaten werden angezeigt.
+
+**Wertetabelle mit Δy und Quotienten.** Konstante Differenz heißt linear,
+konstanter Quotient heißt exponentiell — das sieht man jetzt in der Tabelle,
+statt es glauben zu müssen.
+
+**Quiz**: Zufallsquiz auf Knopfdruck (Klasse, Anzahl, Aufgabentypen wählbar),
+**QR-Code** zum Weitergeben im Klassenraum, Auswertung mit ✓/✗ je Aufgabe und
+als kopierbarer Text.
+
+**Optik**: Die Startseitenkarten zeichnen echte Miniaturgraphen mit derselben
+Routine wie der Explorer. **Beamer-Modus** (▣ in der Kopfzeile) vergrößert
+Linien, Schrift und Bedienelemente. Regler rasten leicht auf glatten Werten
+ein, mit kurzem Vibrationsimpuls, wo das Gerät es kann.
+
+---
+
+## Was in v4 neu war
+
+**Bedienung am Telefon.** Das war der Auslöser: Wer am Regler zog, sah den
+Graphen nicht mehr. Drei Änderungen zusammen lösen das.
+
+1. Koordinatensystem, Gleichung und Regler stehen jetzt in *einem* Block
+   (`.canvas-panel`) direkt untereinander.
+2. Das Koordinatensystem bleibt beim Scrollen unter der Reiterleiste kleben
+   (`position: sticky`). Die Höhe von Kopfzeile und Reitern wird zur Laufzeit
+   gemessen und als CSS-Variable gesetzt — feste Pixelwerte gehen bei anderer
+   Schriftgröße daneben.
+3. Eine Reglerzeile braucht nur noch eine Zeile statt zwei: Buchstabe,
+   Regler, Zahlenfeld und Abspielknopf liegen nebeneinander im Raster.
+   Auch bei vier Parametern (Sinus) passt alles gleichzeitig ins Bild.
+
+Selten Gebrauchtes — Anzeigeoptionen, Achsen, Export — liegt darunter in
+aufklappbaren Abschnitten.
+
+**Quiz-Baukasten** (`js/quiz.js`, eigenes Feld auf der Startseite). Sechs
+Aufgabentypen, damit ein Quiz nicht nach der dritten Frage vorhersehbar wird:
+
+| Typ | Aufgabe |
+|---|---|
+| Zuordnen | Graph gegeben, welche Gleichung passt? |
+| Nachbauen | Graph gegeben, Regler passend einstellen |
+| Wert berechnen | f(x₀) ausrechnen |
+| Ablesen | Nullstelle, y-Achsenabschnitt oder Scheitelpunkt |
+| Wahr oder falsch | Aussage über den Graphen beurteilen |
+| Freie Frage | eigene Frage mit eigenen Antwortmöglichkeiten |
+
+Quizze liegen im `localStorage` und lassen sich als Link weitergeben (das Quiz
+steht im Fragment, geht also nicht an einen Server). Alles, was über einen
+Link hereinkommt, läuft durch `sanitizeQuiz()` — Typ, Wertebereich und Länge
+werden geprüft, bevor irgendetwas übernommen wird.
+
+**Impressum, Datenschutz und „Über die App"** liegen als eigene Seiten bei
+(`impressum.html`, `datenschutz.html`, `ueber.html`, gemeinsames `recht.css`).
+Sie werden mit in die App gepackt und funktionieren offline. Zusätzlich gibt
+es einen Info-Bildschirm in der App selbst, der die Sprache mitmacht und
+anzeigt, welche Ausgabe gerade läuft.
+
+**Lite und Pro** sind jetzt auch bei den Funktionsklassen getrennt.
+
+**Selbsttests** (`npm test`) prüfen ohne Browser, ob Element-IDs,
+Übersetzungsschlüssel und Dateilisten zusammenpassen, und klicken die App in
+jsdom durch.
+
+---
 
 ## Aufbau
 
 ```
-index.html                Struktur, CSP, Einbindung
-package.json              Skripte und Capacitor-Abhaengigkeiten
-capacitor.config.json     App-ID und Name fuer die Android-App
-style.css                 Gestaltung, alle Farben als CSS-Variablen
-manifest.webmanifest      PWA-Metadaten
-sw.js                     Service Worker (Offline-Cache)
-icons/                    App-Icons, lokal erzeugt
-js/licence.js             Lite/Pro-Weiche  ← vor dem Store-Release lesen
-js/billing.js             Play-Store-Kauf (im Browser wirkungslos)
-js/i18n.js                Deutsch und Englisch
-js/functions.js           Zahleneingabe, Formatierung, Funktionskatalog
-js/graph.js               Renderer, Achsen, Nullstellen, Schnittpunkte
-js/app.js                 Zustand, Bedienung, Undo, Übungsmodi
-tools/build-www.mjs       sammelt die Web-Dateien nach www/ (Voll oder Lite)
-tools/make_icons.py       erzeugt alle sechs App-Icons
-.github/workflows/        Pages-Veröffentlichung und Android-Build
+index.html               Gerüst aller Bildschirme
+style.css                sämtliche Farben und das gesamte Layout
+recht.css                Stylesheet der Rechtsseiten (bewusst eigenständig)
+impressum.html           Anbieterkennzeichnung nach § 5 DDG
+datenschutz.html         Datenschutzerklärung, deutsch und englisch
+ueber.html               ausführliche Fassung von „Über die App"
+sw.js                    Service Worker für den Offline-Betrieb
+manifest.webmanifest     PWA-Manifest (Pro)
+manifest-lite.webmanifest        dasselbe für Lite
+
+js/licence.js            Weiche Lite/Pro, Verweis in den Play Store
+js/billing.js            Adapter für den Kauf über Google Play
+js/i18n.js               alle Texte, deutsch und englisch
+js/functions.js          Zahleneingabe und Funktionskatalog
+js/graph.js              Renderer, Ausschnitt, Ableitung, Nullstellensuche
+js/nav.js                Bildschirmverlauf und Zurück-Knopf
+js/qr.js                 QR-Erzeugung, gegen eine Referenzbibliothek geprüft
+js/ui.js                 DOM-Helfer, Kurzmeldung, Reglergruppe
+js/quiz.js               Quiz-Baukasten: Speicher, Editor, Abspieler
+js/app.js                Zustand, Explorer, Wertetabelle, Navigation
+
+tools/build-www.mjs      erzeugt www/ in der Ausgabe pro oder lite
+tools/check.mjs          statischer Abgleich (IDs, Sprachen, Dateilisten)
+tools/smoke.mjs          Klickdurchlauf in jsdom
+tools/qr-selftest.mjs    QR gegen hinterlegte Referenzcodes
+tools/qr-verify.mjs      QR modulweise gegen eine fremde Bibliothek
+tools/quiz-codec.mjs     Quiz-Kodierung: verlustfrei, kompakt, robust
+tools/make_icons.py      erzeugt alle Icons neu (braucht Pillow)
 ```
 
-Die Aufteilung ist bewusst ohne ES-Module gemacht (klassische `<script>`-Tags
-mit einem `MFE`-Namensraum), damit die App auch von einem USB-Stick über
-`file://` startet. Der Katalog in `js/functions.js` beschreibt jede Funktion
-an genau einer Stelle — Parameter, Term, Schreibweise, Hilfslinien, markante
-Punkte, Ziehpunkte. Eine neue Funktionsklasse braucht genau einen neuen
-Eintrag und keine Änderung an Renderer, Tabelle oder Quiz.
+Bewusst **ohne ES-Module**: Alle Dateien hängen sich an ein gemeinsames
+`window.MFE`. So startet die App auch von einem USB-Stick über `file://`, wo
+`import` an der CORS-Regel scheitern würde. Die Reihenfolge der `<script>`-Tags
+in `index.html` ist damit die Ladereihenfolge und nicht beliebig.
 
-## Funktionsumfang
+---
 
-**Explorer** — vier Funktionsklassen, sechs Darstellungsformen (bei
-quadratischen Funktionen allgemeine Form, Scheitelpunktform und
-Nullstellenform). Parameter über Schieberegler *oder* Eingabefeld, Buchstaben
-frei umbenennbar samt Erklärung und Beispiel.
+## Lite und Pro
 
-**Zwei Kurven.** `+ g(x) hinzufügen` legt eine zweite Funktion an, die
-Schnittpunkte werden numerisch bestimmt und mit Koordinaten beschriftet — die
-visuelle Kontrolle zum Gleichsetzungsverfahren. Gibt es im sichtbaren
-Ausschnitt keinen Schnittpunkt, steht das auch dort.
-
-**Hilfslinien und markante Punkte** je Funktionstyp: Steigungsdreieck,
-Symmetrieachse, Scheitelpunkt, Asymptote, Mittellinie und Periode beim Sinus;
-zuschaltbar Nullstellen und y-Achsenabschnitt.
-
-**π-Achse.** Bei trigonometrischen Funktionen ist die x-Achse in Vielfachen
-von π geteilt — `π/2`, `3π/2`, `2π` statt 1,57 / 4,71 / 6,28. Auch die
-Gleichung schreibt die Phasenverschiebung als `sin(2·(x − π/2))`.
-
-**Wertetabelle** mit beiden Kurven, als TSV kopierbar (Excel, Numbers,
-LibreOffice).
-
-**Üben** in zwei Richtungen:
-* *Zuordnen* — Graph vorgegeben, passende Gleichung aus vier wählen.
-* *Nachbauen* — Zielkurve grau im Hintergrund, die Regler müssen passend
-  eingestellt werden. Geprüft wird parameterweise mit Toleranz, die Rückmeldung
-  nennt also, **welcher** Parameter noch zu groß oder zu klein ist.
-
-**Weiteres:** Play-Button je Regler, Transformation der Scheitelpunktform
-Schritt für Schritt, Ziehen am Graphen, Undo/Redo mit Strg+Z, PNG-Export auf
-weißem Grund, Deep Links, Dark Mode, Deutsch/Englisch.
-
-## Zahleneingabe
-
-Komma und Punkt gelten beide als Dezimaltrennzeichen:
-
-| Eingabe | Ergebnis |
-|---|---|
-| `0,5` · `0.5` · `,5` | 0,5 |
-| `−3,25` (typografisches Minus aus kopierten Arbeitsblättern) | −3,25 |
-| `1 000,5` · `1'000.5` | 1000,5 |
-| `3/4` | 0,75 |
-| `pi/2` · `π` · `2pi` | 1,5708 … |
-
-Abgelehnt werden `1,2,3`, `1/0`, `--3` und Buchstaben: Das Feld färbt sich
-rot und springt auf den letzten gültigen Wert zurück. Die Auswertung läuft
-ohne `eval` — Werte können über Deep Links von außen kommen und dürfen
-niemals als Code ausgeführt werden.
-
-Wird ein Wert außerhalb des Reglerbereichs getippt, wächst der Bereich mit,
-statt den Wert abzuschneiden. Ausgenommen sind mathematisch harte Grenzen wie
-die Basis einer Exponentialfunktion.
-
-## Tastatur
-
-| Taste | Wirkung |
-|---|---|
-| ←/→ auf einem Regler | ein Schritt |
-| Umschalt + ←/→ | zehn Schritte |
-| Pos1 / Ende | Minimum / Maximum |
-| Strg+Z / Strg+Umschalt+Z | Rückgängig / Wiederherstellen |
-| ←/→ auf den Reitern | Ansicht wechseln |
-
-## Offline und Installation
-
-`sw.js` legt den eigenen Dateibestand in einen Cache und bedient ihn ohne
-Verbindung. Er spricht mit keiner fremden Domain und speichert keine
-Nutzungsdaten. Bei einer neuen Version die Konstante `CACHE` hochzählen —
-alte Caches werden dann automatisch entfernt.
-
-Über `manifest.webmanifest` lässt sich die App auf dem Homescreen ablegen und
-startet dann ohne Browserleiste. Für die Lite-Version ist das der Weg ganz
-ohne Store.
-
-## Icons
-
-`icons/` enthält zwei Sätze. Beide zeigen dieselben vier Funktionsgraphen in
-den vier Parameterfarben der App — Gerade blau, Parabel magenta,
-Exponentialkurve türkis, Sinuswelle amber — auf dunklem Grund. Wo sich Kurven
-kreuzen, trennt ein Saum in Hintergrundfarbe sie voneinander, sonst wären sie
-bei 48 px nicht mehr auseinanderzuhalten.
-
-| Datei | Verwendung |
-|---|---|
-| `icon-192.png`, `icon-512.png` | Vollversion |
-| `icon-maskable-512.png` | Android, `purpose: maskable` |
-| `icon-lite-*.png` | dieselben Motive mit LITE-Abzeichen |
-
-Die maskable-Varianten halten die inneren 80 % frei, weil Android das Icon
-auf einen Kreis beschneidet.
-
-Neu erzeugen lassen sich alle sechs mit `tools/make_icons.py` (Pillow
-erforderlich). Farben und Kurvenformen stehen dort als Konstanten am
-Dateianfang.
-
-## Lite-Ausgabe
+Ein Quellcodezweig, zwei Ausgaben:
 
 ```bash
-npm run build:lite      # erzeugt www/ mit Lite-Weiche, Lite-Icons, Lite-Namen
-npm run build           # Vollversion
+npm run build        # Pro
+npm run build:lite   # Lite
 ```
 
-Es gibt bewusst keinen zweiten Quellcodezweig — zwei Zweige laufen
-erfahrungsgemäß innerhalb weniger Wochen auseinander. Das Skript nimmt genau
-drei Textersetzungen vor und tauscht die Icons.
+Das Skript nimmt genau vier Eingriffe vor: `DEV_EDITION` in `js/licence.js`,
+Manifest und Icon-Verweise in `index.html`, Cache-Name in `sw.js`. Zwei
+getrennte Zweige liefen erfahrungsgemäß innerhalb weniger Wochen auseinander.
 
-## Lite und Pro — bitte vor dem Release lesen
+Was zur Pro-Ausgabe gehört, steht an genau einer Stelle — `PRO_FEATURES` in
+`js/licence.js`. Die Oberfläche fragt ausschließlich über `licence.has(...)`:
 
-In `js/licence.js`:
+`cat.quadratic` · `cat.polynomial` · `cat.logarithm` · `cat.trig` ·
+`cat.root` · `cat.absolute` · `cat.rational` · `calculus` · `quizBuilder` ·
+`randomQuiz` · `ownQuiz` · `practice` · `secondCurve` · `export` · `share` ·
+`drag` · `transform`
 
-```js
-const DEV_EDITION = 'pro';     // fürs Release auf 'lite'
-const PRO_FEATURES = new Set([
-  'export', 'share', 'drag', 'ownQuiz', 'transform', 'secondCurve', 'practice'
-]);
-```
+Gesperrte Bedienelemente tragen ein PRO-Abzeichen; ein Klick öffnet einen
+Hinweis mit Verweis auf die Pro-Ausgabe im Play Store.
 
-**Diese Datei ist die Weiche für die Oberfläche, kein Kopierschutz.** Alles
-darin läuft im Browser der Nutzerin; wer die Entwicklerkonsole öffnet, ruft
-`MFE.licence.setEdition('pro')` auf und hat Pro. Belastbar wird die Prüfung
-erst an einer Stelle, die der Nutzer nicht kontrolliert:
+> **Wichtig und unverändert:** `licence.js` ist eine Weiche für die
+> Oberfläche, **kein Kopierschutz**. Wer die Entwicklerkonsole öffnet, ruft
+> `MFE.licence.setEdition('pro')` auf und hat Pro. Belastbar wird das erst,
+> wenn der Play-Billing-Token serverseitig gegen die Google Play Developer API
+> geprüft wird. Der Anschlusspunkt dafür ist `verifyWithServer()`. Für eine
+> Schul-App ist die jetzige Lösung meist hinnehmbar — man sollte nur wissen,
+> was man hat.
 
-* **iOS** — StoreKit-Quittung an den eigenen Server, dort gegen die App Store
-  Server API prüfen
-* **Android** — Play-Billing-Purchase-Token gegen die Google Play Developer
-  API prüfen
-* **Web** — eigenes Konto, kurzlebiges signiertes Token, Signaturprüfung
-  serverseitig
+Auch ein Deep Link kann die Sperre nicht umgehen: `readHash()` prüft die
+Funktionsklasse, bevor es einen Zustand übernimmt.
 
-`verifyWithServer()` in `licence.js` ist als Anschlusspunkt vorbereitet, aber
-absichtlich nicht mit einem erfundenen Endpunkt gefüllt. Sobald sie benutzt
-wird, muss in `index.html` bei `connect-src` genau eine Domain ergänzt
-werden — das ist dann der einzige ausgehende Verbindungspunkt der App und
-gehört genau so in die Datenschutzerklärung.
+---
 
-Gesperrte Bedienelemente bleiben in der Lite-Version sichtbar und tragen ein
-PRO-Abzeichen. Das ist ehrlicher als sie zu verstecken und funktioniert
-zugleich als Werbefläche.
-
-## Datenschutz
-
-Gespeichert wird ausschließlich lokal (`localStorage`): Sprache, Theme und die
-selbst gewählten Parameter-Buchstaben. Keine Kennungen, keine Analytik, keine
-Schriften von fremden Servern. Der Zustand für Deep Links steht im
-`location.hash` — der Hash wird vom Browser nicht an einen Server übertragen.
-
-Die Content-Security-Policy in `index.html` erlaubt `connect-src 'self'`,
-also ausschließlich die eigenen Dateien für den Offline-Cache. Damit ist die
-Aussage „keine Datenübertragung" technisch erzwungen und nicht nur
-versprochen.
-
-## Was noch offen ist
-
-* **QR-Code.** Ohne Drittanbieter heißt: eigener Encoder oder eine
-  MIT-lizenzierte Bibliothek, die lokal mitgeliefert wird. Eine
-  CDN-Einbindung wäre der einzige Punkt, an dem doch Daten nach außen gingen.
-  Die Zustands-URL liefert „Link kopieren" bereits.
-* **Mehr als zwei Kurven.** `state.curves` ist ein Array, die Grenze steht nur
-  in `CURVE_NAMES` und im Deep-Link-Format.
-* **Aufgabensammlung für Lehrkräfte** — mehrere Deep Links als Arbeitsblatt.
-
-
-## Repository und Veröffentlichung
-
-`.github/workflows/pages.yml` veröffentlicht das Repo bei jedem Push auf
-`main` als statische Website über GitHub Pages. Es wird nichts gebaut und
-nichts installiert — die App besteht ausschließlich aus HTML, CSS und
-JavaScript. Einmalig nötig: **Settings → Pages → Source: GitHub Actions**.
-
-Danach läuft die App unter
-`https://<benutzername>.github.io/<repo-name>/` — mit HTTPS, also inklusive
-Service Worker, Zwischenablage und Installation auf dem Homescreen.
-
-### Weg in den Play Store
-
-Der Play Store nimmt keine Website an, sondern ein Android App Bundle. Die
-App wird dafür mit **Capacitor** in ein natives Projekt verpackt: Die
-Web-Dateien landen in der App selbst, es gibt keinen Ladevorgang aus dem
-Netz, und die App startet auch ohne Verbindung.
-
-Alles dafür Nötige liegt bei — bis auf den Ordner `android/`, der einmalig
-lokal erzeugt werden muss, weil dabei Pakete heruntergeladen werden:
+## Tests
 
 ```bash
-npm install
-npm run android:add          # legt android/ an
-git add android && git commit -m "Android-Projekt"
-git push
+npm install     # einmalig, zieht jsdom
+npm test
 ```
 
-Danach baut `.github/workflows/android.yml` bei jedem Tag `v*` ein signiertes
-AAB:
+`tools/check.mjs` findet drei Fehlerarten, die sich hier am häufigsten
+einschleichen: eine gesuchte Element-ID, die es im HTML nicht mehr gibt; ein
+Übersetzungsschlüssel, der in einer Sprache fehlt; eine Datei, die im Service
+Worker steht, aber nicht existiert (ein einziger 404 lässt die gesamte
+Offline-Installation scheitern).
 
-```bash
-git tag v3.0.0 && git push --tags
-```
+`tools/check.mjs` prüft außerdem, dass keine CSS-Variable in einem Block
+zweimal gesetzt wird (die spätere gewinnt lautlos) und dass alle acht
+Linienfarben in beiden Farbschemata mindestens ΔE 25 auseinanderliegen —
+sonst sind sie auf einem Beamer nicht zu unterscheiden.
 
-Vorher einmalig einen Signaturschlüssel erzeugen und als GitHub Secrets
-hinterlegen:
+`tools/qr-selftest.mjs` vergleicht die QR-Matrizen mit hinterlegten
+Referenzcodes. Diese stammen aus `tools/qr-verify.mjs`, das modulweise gegen
+die Python-Bibliothek `qrcode` abgleicht — 36 Fälle über die Versionen 1 bis
+34 und alle vier Fehlerkorrekturstufen, jedes Modul identisch.
 
-```bash
-keytool -genkey -v -keystore upload-keystore.jks \
-        -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-base64 -w0 upload-keystore.jks          # Ausgabe als Secret einfügen
-```
+`tools/smoke.mjs` startet die App in jsdom und klickt sie durch — Explorer,
+Regler, Brucheingabe, Wertetabelle, Quiz, Baukasten mit drei Aufgaben,
+Speichern, Link-Kodierung, Abspielen, Sprachwechsel. Einmal als Pro, einmal
+als Lite, dort mit der Erwartung, dass die Sperren greifen.
+
+---
+
+## Android: APK und AAB
+
+Verpackt wird mit **Capacitor**: Die Web-Dateien liegen *in* der App, es wird
+nichts nachgeladen.
+
+### Über GitHub (kein Android Studio nötig)
+
+`.github/workflows/android.yml` läuft bei jedem Push auf `main` und auf Klick
+unter *Actions → Android → Run workflow*. Ergebnis: je eine **Debug-APK** für
+Pro und Lite, herunterzuladen unter *Artifacts*. Die lässt sich direkt auf ein
+Telefon ziehen und installieren — ohne Keystore.
+
+Sobald der Keystore existiert, vier Secrets hinterlegen
+(*Settings → Secrets and variables → Actions*):
 
 | Secret | Inhalt |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | Ausgabe des base64-Befehls |
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 mein.keystore` |
 | `ANDROID_KEYSTORE_PASSWORD` | Passwort des Keystores |
-| `ANDROID_KEY_ALIAS` | `upload` |
+| `ANDROID_KEY_ALIAS` | Alias des Schlüssels |
 | `ANDROID_KEY_PASSWORD` | Passwort des Schlüssels |
 
-**Der Schlüssel gehört nie ins Repo.** Geht er verloren, lässt sich die App
-im Play Store nicht mehr aktualisieren. Eine Sicherungskopie außerhalb von
-GitHub anlegen.
+Ein Tag `v4.0.1` erzeugt dann zusätzlich **signierte APK und signiertes AAB**
+und hängt beide an die GitHub-Release. Fehlen die Secrets, läuft der Lauf
+trotzdem grün durch und legt die unsignierten Dateien ab.
 
-Vor der Veröffentlichung in der Play Console noch zu erledigen:
+Keystore erzeugen:
 
-* **App-ID festlegen.** In `capacitor.config.json` steht `de.example.mathfunctions`
-  als Platzhalter. Sie lässt sich nach der Veröffentlichung nie wieder ändern.
-* **Datensicherheit.** Das Formular fragt, welche Daten erhoben werden. Bei
-  dieser App: keine. Das ist eine seltene und angenehme Antwort — die
-  Content-Security-Policy in `index.html` belegt sie technisch.
-* **Inhaltsangemessenheit.** Bildungs-App ohne Nutzerinhalte, damit die
-  niedrigste Altersfreigabe.
-* **Zielgruppe.** Sobald Kinder unter 13 zur Zielgruppe gehören, greifen die
-  Regeln für Familien-Apps: keine Werbung, keine Datenerhebung. Beides trifft
-  hier ohnehin zu.
-* **Zielsystem.** Google verlangt jedes Jahr ein neueres `targetSdkVersion`.
-  Capacitor liefert einen aktuellen Wert mit, aber die App braucht deshalb
-  mindestens einmal jährlich ein Update.
+```bash
+keytool -genkeypair -v -keystore mein.keystore -alias mathfunctions \
+        -keyalg RSA -keysize 4096 -validity 10000
+```
 
-### Lite und Pro im Store
+> Geht dieser Schlüssel verloren, lässt sich die App im Play Store **nie
+> wieder** aktualisieren. Sicherungskopie außerhalb von GitHub aufbewahren.
+> `.gitignore` sperrt `*.keystore` und `*.jks` bereits.
 
-Zwei Wege, beide gängig:
+### Lokal
 
-1. **Eine App mit In-App-Kauf** (empfohlen). Eine Store-Seite, eine
-   Bewertungsliste, ein Update-Kanal. `js/billing.js` ist als Adapter dafür
-   vorbereitet — Plugin installieren, Produkt-ID in der Play Console anlegen,
-   fertig. Wichtig: Bereits gekaufte Pro-Versionen müssen sich
-   wiederherstellen lassen, sonst steht die Nutzerin nach einem Gerätewechsel
-   wieder vor der Lite-Fassung. `restore()` erledigt das beim Start.
-2. **Zwei getrennte Apps.** `npm run build:lite` erzeugt die reduzierte
-   Fassung mit eigenem Icon. Braucht eine zweite App-ID und doppelte Pflege
-   — nur sinnvoll, wenn die Lite-Fassung bewusst deutlich schmaler sein soll.
+```bash
+npm install
+npm run android:add      # legt android/ an (einmalig)
+npm run android:open     # öffnet Android Studio
+```
 
-### Trusted Web Activity als Alternative
+Der Ordner `android/` fehlt absichtlich im Repo — er wird erzeugt. Der
+Workflow legt ihn selbst an, wenn er fehlt.
 
-Mit **Bubblewrap** lässt sich stattdessen die GitHub-Pages-Adresse als App
-verpacken. Deutlich weniger Aufwand, aber: Die App holt ihre Inhalte beim
-ersten Start aus dem Netz, und In-App-Käufe sind damit umständlicher. Für den
-Anfang trotzdem ein legitimer Weg, um die App überhaupt im Store zu haben.
+### Anwendungskennung
 
-### Lizenz
+`capacitor.config.json` steht auf `de.wisdompeak.mathfunctions`. Die
+Lite-Ausgabe bekommt im Workflow automatisch `.lite` angehängt, damit beide
+nebeneinander im Play Store stehen und gleichzeitig installiert sein können.
+Der Verweis in den Store zeigt in beiden Ausgaben auf die **Pro**-Kennung —
+das ist Absicht und steht so in `js/licence.js`.
 
-Es liegt bewusst keine `LICENSE` bei — das ist eine Entscheidung, die du
-treffen solltest. Für Unterrichtsmaterial ist MIT verbreitet; wenn
-Weiterverkauf ausgeschlossen sein soll, eher CC BY-NC-SA. GitHub bietet die
-Auswahl beim Anlegen der Datei direkt an.
+---
+
+## Vor der Veröffentlichung
+
+- [ ] Anwendungskennung prüfen (`capacitor.config.json`, `PRO_APP_ID` in `js/licence.js`)
+- [ ] `PRODUCT_ID` in `js/billing.js` gegen die Play Console abgleichen
+- [ ] Billing-Plugin installieren: `npm install @capacitor-community/in-app-purchases`
+- [ ] Impressum und Datenschutzerklärung von jemandem mit Zulassung durchsehen lassen
+- [ ] Datenschutz-Formular der Play Console ausfüllen (Antwort: keine Datenerhebung)
+- [ ] Keystore anlegen, sichern, Secrets hinterlegen
+- [ ] Auf einem echten Telefon testen — jsdom kann kein Canvas
+
+---
+
+## Datenschutz in einem Satz
+
+Es gibt keinen Server. Einstellungen, Buchstaben und eigene Quizze liegen im
+`localStorage` des Geräts. Der einzige Netzwerkzugriff, den die App überhaupt
+auslösen kann, ist der Kauf der Pro-Ausgabe über Google Play und der Verweis
+in den Store. Einzelheiten in `datenschutz.html`.
+
+## Lizenz
+
+Eigene Inhalte und Code: Simon Mählmann, Wisdompeak Apps.
+Fremdbestandteil: Capacitor (MIT).
