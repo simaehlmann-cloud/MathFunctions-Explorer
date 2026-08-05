@@ -193,6 +193,24 @@ for (const wf of ['.github/workflows/android.yml', '.github/workflows/pages.yml'
   }
 }
 
+/* --- 7 · Sperrdatei -------------------------------------------------------
+   Ohne package-lock.json loest npm auf dem Server andere Fassungen auf als
+   auf dem eigenen Rechner. Genau daran ist der Selbsttest einmal gescheitert:
+   lokal jsdom 30 (mit TextEncoder im Fenster), auf dem Server jsdom 25 (ohne).
+   Der Testrahmen ist inzwischen gegen beides gewappnet - die Sperrdatei sorgt
+   trotzdem dafuer, dass beide Seiten dasselbe installieren. */
+if (!(await exists('package-lock.json'))) {
+  note('package-lock.json fehlt - der Server installiert dann andere Fassungen als du testest');
+} else {
+  const lock = JSON.parse(await read('package-lock.json'));
+  const pkg = JSON.parse(await read('package.json'));
+  for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
+    if (!lock.packages?.[`node_modules/${dep}`]) {
+      note(`package-lock.json kennt "${dep}" nicht - Sperrdatei mit "npm install" erneuern`);
+    }
+  }
+}
+
 /* --- Ergebnis ------------------------------------------------------------ */
 if (problems.length) {
   console.error(`${problems.length} Befund(e):`);

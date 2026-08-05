@@ -50,6 +50,37 @@ window.HTMLCanvasElement.prototype.toBlob = (cb) => cb(null);
 window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 window.HTMLDialogElement.prototype.close = function (v) { this.open = false; this.returnValue = v ?? ''; };
 window.scrollTo = () => {};
+/* jsdom richtet sein Fenster nicht vollstaendig ein. Was hier ergaenzt wird,
+   gibt es in JEDEM echten Browser und in jeder Android-WebView seit Jahren -
+   die Attrappen gleichen also eine Luecke des Testrahmens aus und nicht eine
+   der App. TextEncoder fehlte in jsdom 25 und war in jsdom 30 vorhanden;
+   dadurch lief der Test lokal durch und brach auf dem Server ab. */
+for (const name of ['TextEncoder', 'TextDecoder', 'Blob']) {
+  if (typeof window[name] === 'undefined' && typeof globalThis[name] !== 'undefined') {
+    window[name] = globalThis[name];
+  }
+}
+if (typeof window.btoa === 'undefined') {
+  window.btoa = (b) => Buffer.from(b, 'binary').toString('base64');
+  window.atob = (b) => Buffer.from(b, 'base64').toString('binary');
+}
+if (typeof window.structuredClone === 'undefined') window.structuredClone = globalThis.structuredClone;
+// PointerEvent fehlt in aelteren jsdom-Fassungen. Fuer den Test genuegt ein
+// MouseEvent mit pointerId - genau die Felder, die die App ausliest.
+if (typeof window.PointerEvent !== 'function') {
+  window.PointerEvent = class extends window.MouseEvent {
+    constructor(type, init = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 1;
+      this.pointerType = init.pointerType ?? 'touch';
+      this.isPrimary = init.isPrimary ?? true;
+    }
+  };
+}
+for (const m of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCapture']) {
+  if (!window.Element.prototype[m]) window.Element.prototype[m] = () => {};
+}
+
 // jsdom kennt matchMedia nicht vollstaendig.
 window.matchMedia = (q) => ({
   media: q, matches: false, onchange: null,
