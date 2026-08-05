@@ -82,10 +82,19 @@ for (const m of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCaptur
 }
 
 // jsdom kennt matchMedia nicht vollstaendig.
-window.matchMedia = (q) => ({
-  media: q, matches: false, onchange: null,
-  addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false
-});
+let fakeWide = false;
+const mediaListeners = [];
+window.matchMedia = (q) => {
+  const isSplit = q.includes('min-width: 860px');
+  const mql = {
+    media: q, onchange: null,
+    get matches() { return isSplit ? fakeWide : false; },
+    addEventListener(_, fn) { if (isSplit) mediaListeners.push(fn); },
+    removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false
+  };
+  return mql;
+};
+const setWide = (v) => { fakeWide = v; mediaListeners.forEach(fn => fn()); };
 window.Element.prototype.scrollIntoView = function () {};
 window.confirm = () => true;
 let printed = 0;
@@ -695,6 +704,90 @@ expect(window.MFE.licence.openStore() === 'notyet',
 expect(window.MFE.licence.storeLive() === false, 'der Schalter steht auf "noch nicht"');
 expect(window.MFE.billing.status() === 'web' || window.MFE.billing.status() === 'owned',
        'Billing meldet im Browser einen sinnvollen Zustand');
+
+// --- Fassungsnummer sichtbar ----------------------------------------------
+click('#btn-home'); await tick();
+click('#card-info'); await tick();
+{
+  const line = $('#info-version').textContent;
+  expect(/\d+\.\d+\.\d+/.test(line), `die Info-Seite nennt die Fassung ("${line}")`);
+  expect(line.includes(LITE ? 'Lite' : 'Pro'), 'und die Ausgabe');
+}
+click('[data-back="home"]'); await tick();
+
+// --- In der App wird ein vorhandener Service Worker abgemeldet -------------
+{
+  const unregistered = [];
+  const fakeReg = { unregister: async () => { unregistered.push(1); return true; } };
+  window.navigator.serviceWorker = {
+    getRegistrations: async () => [fakeReg],
+    addEventListener: () => {},
+    register: async () => { throw new Error('haette nicht registrieren duerfen'); },
+    controller: null
+  };
+  window.caches = { keys: async () => ['mfe-v1', 'fremd'], delete: async () => true };
+  const prevCap = window.Capacitor;
+  window.Capacitor = { isNativePlatform: () => true };
+  window.MFE.app?.registerServiceWorker?.();
+  await new Promise(r => setTimeout(r, 30));
+  expect(unregistered.length === 1, 'ein vorhandener Service Worker wird in der App abgemeldet');
+  window.Capacitor = prevCap;
+}
+
+// --- Schnellwahl auf der Startseite ---------------------------------------
+click('#btn-home'); await tick();
+{
+  const sel = $('#home-select');
+  expect(sel, 'Schnellwahl vorhanden');
+  expect(sel.options.length === 10, `ein Hinweis plus neun Klassen (${sel.options.length})`);
+  expect(sel.options[0].value === '', 'der erste Eintrag ist nur ein Hinweis');
+  if (LITE) {
+    expect(Array.from(sel.options).filter(o => o.textContent.includes('PRO')).length === 7,
+           'Lite: sieben Klassen sind in der Liste als PRO gekennzeichnet');
+  }
+  sel.value = 'linear';
+  sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await tick();
+  expect($('#screen-app').classList.contains('is-active'), 'die Schnellwahl oeffnet den Explorer');
+  expect(sel.selectedIndex === 0, 'und stellt sich danach wieder auf den Hinweis');
+}
+
+// --- Wertetabelle neben dem Graphen ---------------------------------------
+{
+  const app = $('#screen-app');
+  expect(!app.classList.contains('is-split'), 'schmal: kein geteiltes Layout');
+  expect($('#chip-split').hidden, 'schmal: der Schalter bleibt verborgen');
+
+  setWide(true); await tick();
+  expect(!$('#chip-split').hidden, 'breit: der Schalter erscheint');
+  expect(app.classList.contains('is-split'), 'breit: Graph und Tabelle stehen nebeneinander');
+  expect($('#values-table tbody').children.length > 0, 'und die Tabelle ist gefuellt');
+
+  // Abschalten muss wirken und erhalten bleiben
+  const box = $('#opt-split');
+  box.checked = false;
+  box.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await tick();
+  expect(!app.classList.contains('is-split'), 'abgeschaltet: wieder einspaltig');
+  box.checked = true;
+  box.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await tick();
+
+  // Im Uebungsreiter ergibt die Tabelle daneben keinen Sinn
+  click('#tab-btn-quiz'); await tick();
+  expect(!app.classList.contains('is-split'), 'im Uebungsteil kein geteiltes Layout');
+  click('#tab-btn-explorer'); await tick();
+  expect(app.classList.contains('is-split'), 'zurueck im Explorer wieder geteilt');
+  setWide(false); await tick();
+  expect(!app.classList.contains('is-split'), 'wird der Bildschirm schmal, klappt es zusammen');
+}
+
+// --- Kopfzeile auf der Startseite ------------------------------------------
+click('#btn-home'); await tick();
+expect(window.document.documentElement.dataset.screen === 'home',
+       'der Bildschirm steht als Attribut fest (damit das CSS reagieren kann)');
+click('.fn-card[data-category="linear"]'); await tick();
+expect(window.document.documentElement.dataset.screen === 'app', 'und wechselt mit');
 
 // Sprache umschalten
 click('#btn-lang-en'); await tick();

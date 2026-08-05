@@ -173,6 +173,8 @@ const de = {
 
   /* --- Startseite, Info, Recht --- */
   'home.more': 'Weiter geht es hier',
+  'home.quickPick': 'Oder direkt auswählen',
+  'home.quickPickHint': 'Funktionsklasse wählen …',
   'home.inPro': 'In der Pro-Ausgabe enthalten',
   'home.quizzes': 'Eigene Quizze',
   'home.quizzesDesc': 'Aufgaben zusammenstellen, speichern und als Link weitergeben.',
@@ -189,6 +191,9 @@ const de = {
   'info.privacyTitle': 'Offline, ohne Konto, ohne Werbung',
   'info.privacy': 'Alles läuft auf dem Gerät: keine Anmeldung, keine Werbung, kein Tracking, keine Server. Nach der Installation funktioniert die App ohne Internetverbindung.',
   'info.editionTitle': 'Deine Ausgabe',
+  'info.version': 'Fassung {v} · {e} · {p}',
+  'info.platform.app': 'installierte App',
+  'info.platform.web': 'im Browser',
   'info.edition.pro': 'Du nutzt die Pro-Ausgabe. Alle Funktionen stehen zur Verfügung.',
   'info.edition.lite': 'Du nutzt die Lite-Ausgabe. Sie ist kostenlos und werbefrei.',
   'info.liteHint': 'In der Lite-Ausgabe sind quadratische und trigonometrische Funktionen, die zweite Kurve, der Nachbau-Modus, eigene Quizze, das Anfassen des Graphen sowie Bildexport und Link nicht enthalten.',
@@ -382,6 +387,7 @@ const de = {
   /* --- v5: Anzeigeoptionen --- */
   'opt.derivative': 'Ableitung f\u2032',
   'opt.tangent': 'Tangente',
+  'opt.split': 'Wertetabelle daneben',
   'opt.trace': 'Punkt verfolgen',
   'opt.snap': 'Regler auf glatte Werte fangen',
   'opt.diff': 'Differenzen \u0394y',
@@ -567,6 +573,8 @@ const en = {
 
 
   'home.more': 'More to do here',
+  'home.quickPick': 'Or pick one directly',
+  'home.quickPickHint': 'Choose a class of functions …',
   'home.inPro': 'Included in the Pro edition',
   'home.quizzes': 'Your own quizzes',
   'home.quizzesDesc': 'Build a set of tasks, save it and pass it on as a link.',
@@ -583,6 +591,9 @@ const en = {
   'info.privacyTitle': 'Offline, no account, no ads',
   'info.privacy': 'Everything runs on the device: no sign-in, no ads, no tracking, no servers. After installation the app works without an internet connection.',
   'info.editionTitle': 'Your edition',
+  'info.version': 'Version {v} · {e} · {p}',
+  'info.platform.app': 'installed app',
+  'info.platform.web': 'in the browser',
   'info.edition.pro': 'You are using the Pro edition. Every feature is available.',
   'info.edition.lite': 'You are using the Lite edition. It is free and ad-free.',
   'info.liteHint': 'The Lite edition does not include quadratic and trigonometric functions, the second curve, the rebuild mode, your own quizzes, dragging the graph, image export or shareable links.',
@@ -772,6 +783,7 @@ const en = {
 
   'opt.derivative': 'Derivative f\u2032',
   'opt.tangent': 'Tangent',
+  'opt.split': 'Table beside the graph',
   'opt.trace': 'Trace a point',
   'opt.snap': 'Snap sliders to round values',
   'opt.diff': 'Differences \u0394y',

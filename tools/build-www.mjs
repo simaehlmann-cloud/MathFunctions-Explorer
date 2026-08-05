@@ -93,9 +93,9 @@ async function main() {
     // 1 · Lizenzweiche
     const licPath = path.join(OUT, 'js/licence.js');
     let lic = await readFile(licPath, 'utf8');
-    const before = lic;
-    lic = lic.replace(/const DEV_EDITION = '(?:pro|lite)';/, "const DEV_EDITION = 'lite';");
-    if (lic === before) throw new Error('DEV_EDITION nicht gefunden - js/licence.js geaendert?');
+    const DEV_RE = /const DEV_EDITION = '(?:pro|lite)';/;
+    if (!DEV_RE.test(lic)) throw new Error('DEV_EDITION nicht gefunden - js/licence.js geaendert?');
+    lic = lic.replace(DEV_RE, "const DEV_EDITION = 'lite';");
     // Die Anwendungskennung der Lite-Ausgabe endet auf .lite; der Verweis in
     // den Store muss aber auf die PRO-Kennung zeigen. Deshalb wird hier
     // absichtlich nichts an PRO_APP_ID geaendert.
@@ -108,6 +108,17 @@ async function main() {
     html = html.replace(/<title>[^<]*<\/title>/, '<title>MathFunctions Explorer Lite</title>');
     await writeFile(htmlPath, html);
   }
+
+  // 3b · Fassungsnummer aus package.json in die App schreiben. Von Hand
+  //      gepflegt liefe sie frueher oder spaeter auseinander - und dann
+  //      zeigt die App eine Nummer an, die es nie gab.
+  const pkg = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8'));
+  const appPath = path.join(OUT, 'js/app.js');
+  let app = await readFile(appPath, 'utf8');
+  const VER_RE = /const APP_VERSION = '[^']*';/;
+  if (!VER_RE.test(app)) throw new Error('APP_VERSION nicht gefunden - js/app.js geaendert?');
+  app = app.replace(VER_RE, `const APP_VERSION = '${pkg.version}';`);
+  await writeFile(appPath, app);
 
   // 4 · Cache-Name je Ausgabe
   const swPath = path.join(OUT, 'sw.js');

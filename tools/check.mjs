@@ -296,6 +296,51 @@ const UMLAUT_OK = new Set([
   }
 }
 
+/* --- 9 · Fassungsnummern -------------------------------------------------
+   package.json, sw.js und js/app.js muessen dieselbe Nummer tragen. Laufen
+   sie auseinander, zeigt die App eine andere Fassung an, als installiert
+   ist - und die Fehlersuche beginnt mit einer falschen Annahme. */
+{
+  const pkgVersion = JSON.parse(await read('package.json')).version;
+  const appVersion = (await read('js/app.js')).match(/const APP_VERSION = '([^']*)'/)?.[1];
+  const swVersion = (await read('sw.js')).match(/const CACHE = 'mfe-v([\d.]+)'/)?.[1];
+  if (appVersion !== pkgVersion) {
+    note(`APP_VERSION in js/app.js ist "${appVersion}", package.json sagt "${pkgVersion}"`);
+  }
+  if (swVersion !== pkgVersion) {
+    note(`Cache-Name in sw.js ist "mfe-v${swVersion}", package.json sagt "${pkgVersion}"`);
+  }
+}
+
+/* --- 10 · Feste Breiten --------------------------------------------------
+   Die Kopfzeile war einmal breiter als ein Telefon: die ganze Seite liess
+   sich seitlich verschieben, links fehlten Zeichen. Eine echte Pruefung
+   braeuchte ein Browser-Layout, das hier nicht zur Verfuegung steht. Was
+   sich statisch sagen laesst: eine feste Breite oberhalb der schmalsten
+   ueblichen Geraetebreite ist fast immer ein Fehler.
+
+   360 CSS-Pixel ist die Breite gaengiger Android-Telefone; alles darueber
+   in width/min-width ausserhalb einer Medienabfrage wird gemeldet. */
+const NARROWEST_DEVICE = 360;
+{
+  let inMedia = 0;
+  for (const raw of css.split('\n')) {
+    const line = raw.replace(/\/\*.*?\*\//g, '');
+    if (/@media/.test(line)) inMedia++;
+    if (inMedia && /^\s*\}/.test(line) && !/\{/.test(line)) inMedia = Math.max(0, inMedia - 1);
+    if (inMedia) continue;
+    const m = line.match(/(?:^|[;{\s])(min-width|width)\s*:\s*(\d+)px/);
+    if (!m) continue;
+    const px = Number(m[2]);
+    // In minmax()/clamp() steht die Zahl als Untergrenze - dort ist sie
+    // beabsichtigt und harmlos, weil der Browser weiter verkleinert.
+    if (/minmax\(|clamp\(|min\(/.test(line)) continue;
+    if (px > NARROWEST_DEVICE) {
+      note(`CSS: feste ${m[1]} von ${px}px ausserhalb einer Medienabfrage - passt nicht auf ein ${NARROWEST_DEVICE}px breites Telefon: ${line.trim().slice(0, 70)}`);
+    }
+  }
+}
+
 /* --- Ergebnis ------------------------------------------------------------ */
 if (problems.length) {
   console.error(`${problems.length} Befund(e):`);

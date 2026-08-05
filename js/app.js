@@ -24,6 +24,11 @@ const SESSION_MAX_AGE = 30 * 24 * 3600 * 1000;   // 30 Tage
 const CURVE_NAMES = ['f', 'g'];
 const SCREENS = ['home', 'app', 'quizzes', 'builder', 'play', 'info'];
 const BEAMER_SCALE = 1.55;
+/* Wird von tools/build-www.mjs aus package.json gesetzt; tools/check.mjs
+   prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
+   welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
+   raten. */
+const APP_VERSION = '6.5.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -46,6 +51,7 @@ const state = {
   theme: 'light',
   display: 'normal',              // 'normal' oder 'beamer'
   snap: true,
+  split: true,          // Wertetabelle neben dem Graphen, wenn Platz ist
   view: { ...DEFAULT_VIEW },
   piAxis: false,
   tangentX: 1,
@@ -94,6 +100,7 @@ function loadSettings() {
     if (s.theme === 'dark' || s.theme === 'light') state.theme = s.theme;
     if (s.display === 'beamer' || s.display === 'normal') state.display = s.display;
     if (typeof s.snap === 'boolean') state.snap = s.snap;
+    if (typeof s.split === 'boolean') state.split = s.split;
     for (const [form, map] of Object.entries(s.symbols || {})) {
       if (!FUNCTIONS[form]) continue;
       ensureSymbols(form);
@@ -107,7 +114,7 @@ const saveSettings = debounce(() => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       lang: MFE.i18n.lang, theme: state.theme, display: state.display,
-      snap: state.snap, symbols: state.symbols
+      snap: state.snap, split: state.split, symbols: state.symbols
     }));
   } catch {}
 }, 400);
@@ -1342,6 +1349,32 @@ function sortHomeCards() {
   }
 }
 
+/**
+ * Schnellwahl auf der Startseite. Die Karten bleiben der Hauptweg - ein Bild
+ * der Kurve erkennt man schneller als einen Listeneintrag, und darum geht es
+ * in dieser App. Die Liste ist fuer die, die schon wissen, wohin sie wollen,
+ * und fuer alle, denen neun Karten zu viel Scrollen sind.
+ */
+function renderHomeSelect() {
+  const sel = $('#home-select');
+  if (!sel) return;
+  sel.replaceChildren();
+
+  const hint = document.createElement('option');
+  hint.value = '';
+  hint.textContent = t('home.quickPickHint');
+  hint.selected = true;
+  sel.append(hint);
+
+  for (const [cat, forms] of Object.entries(CATEGORY_FORMS)) {
+    const allowed = licence.has('cat.' + cat);
+    const o = document.createElement('option');
+    o.value = cat;
+    o.textContent = t('cat.' + cat) + (allowed ? '' : '  \u2013 PRO');
+    sel.append(o);
+  }
+}
+
 /* ==========================================================================
    15 · INFO-BILDSCHIRM
    ========================================================================== */
@@ -1355,7 +1388,39 @@ function renderInfo() {
   }
   const pro = licence.isPro();
   $('#info-edition').textContent = t(pro ? 'info.edition.pro' : 'info.edition.lite');
+  $('#info-version').textContent = t('info.version', {
+    v: APP_VERSION,
+    e: pro ? 'Pro' : 'Lite',
+    p: window.Capacitor?.isNativePlatform?.() ? t('info.platform.app') : t('info.platform.web')
+  });
   $('#info-lite-box').hidden = pro;
+}
+
+/* ==========================================================================
+   15b · WERTETABELLE NEBEN DEM GRAPHEN
+   Am Telefon im Hochformat ist dafuer kein Platz - dort bleibt es bei den
+   Reitern. Sobald der Bildschirm breit genug ist (Tablet, Querformat,
+   Rechner), stehen Graph und Tabelle nebeneinander. Das spart genau das
+   Hin- und Herschalten, das beim Ablesen von Werten am meisten stoert.
+   ========================================================================== */
+const SPLIT_QUERY = '(min-width: 860px), (orientation: landscape) and (min-width: 700px) and (min-height: 380px)';
+let splitMedia = null;
+
+/** Passt genug Platz? Reine Abfrage, ohne Nebenwirkung. */
+const splitFits = () => !!splitMedia?.matches;
+
+function updateSplit() {
+  const chip = $('#chip-split');
+  if (chip) chip.hidden = !splitFits();
+
+  const app = $('#screen-app');
+  const on = splitFits() && state.split && currentTab === 'explorer';
+  app.classList.toggle('is-split', on);
+  // Die Tabelle wird im geteilten Layout dauerhaft gezeigt, also muss sie
+  // auch gerechnet sein - sonst steht dort eine leere Huelse.
+  if (on && tableDirty) generateTable();
+  $('#tab-btn-table').setAttribute('aria-disabled', String(on));
+  requestAnimationFrame(() => { if (mainGraph.measure()) render(); });
 }
 
 /* ==========================================================================
@@ -1373,6 +1438,7 @@ function applyLanguage() {
   updateExplorer();
   renderInfo();
   sortHomeCards();
+  renderHomeSelect();
   MFE.quiz.relabel();
   if (quiz.answer) renderQuizOptions();
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
@@ -1407,6 +1473,10 @@ let currentTab = 'explorer';
 function applyScreen(which) {
   if (!SCREENS.includes(which)) which = 'home';
   lastScreen = which;
+  // Damit das Stylesheet weiss, wo wir sind - auf der Startseite haben
+  // Rueckgaengig und Wiederherstellen nichts zu suchen und nehmen in der
+  // Kopfzeile nur Platz weg.
+  document.documentElement.dataset.screen = which;
   for (const s of SCREENS) {
     const el = $(`#screen-${s}`);
     if (el) el.classList.toggle('is-active', s === which);
@@ -1429,6 +1499,8 @@ function applyTab(name) {
     b.tabIndex = on ? 0 : -1;
   });
   $$('.tab-panel').forEach(p => p.classList.toggle('is-active', p.id === `tab-${name}`));
+  $('#screen-app').dataset.tab = name;
+  updateSplit();
   if (name !== 'explorer') stopPlay();
   requestAnimationFrame(() => {
     if (name === 'explorer') { mainGraph.measure(); render(); }
@@ -1464,6 +1536,7 @@ function syncOptionInputs() {
   }
   $('#opt-piAxis').checked = state.piAxis;
   $('#opt-snap').checked = state.snap;
+  $('#opt-split').checked = state.split;
   $('#opt-diff').checked = state.table.diff;
   $('#opt-quot').checked = state.table.quot;
   mainGraph.canvas.classList.toggle('is-draggable', state.opts.drag);
@@ -1518,6 +1591,18 @@ function fitViewSilently() {
 function bindEvents() {
   $$('.fn-card[data-category]').forEach(card =>
     card.addEventListener('click', () => openCategory(card.dataset.category)));
+
+  $('#home-select').addEventListener('change', (e) => {
+    const cat = e.target.value;
+    e.target.selectedIndex = 0;          // wieder auf den Hinweis zuruecksetzen
+    if (cat) openCategory(cat);
+  });
+
+  $('#opt-split').addEventListener('change', (e) => {
+    state.split = e.target.checked;
+    saveSettings();
+    updateSplit();
+  });
 
   $('#card-quizzes').addEventListener('click', () => {
     if (!licence.has('quizBuilder')) { proHint(); return; }
@@ -1763,11 +1848,32 @@ function bindEvents() {
    ========================================================================== */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
-  // In der installierten App ist der Service Worker sinnlos: die Dateien
-  // liegen ohnehin im Paket. Schlimmer noch - jede neue App-Fassung bringt
-  // eine neue sw.js mit, die dann wartet, und die Nutzerin bekaeme im frisch
-  // aktualisierten Programm die Meldung "Eine neue Fassung steht bereit".
-  if (window.Capacitor?.isNativePlatform?.()) return;
+
+  /* In der installierten App ist der Service Worker sinnlos: die Dateien
+     liegen ohnehin im Paket. Schlimmer noch - jede neue App-Fassung bringt
+     eine neue sw.js mit, die dann wartet, und die Nutzerin bekaeme im frisch
+     aktualisierten Programm die Meldung "Eine neue Fassung steht bereit".
+
+     ACHTUNG, das war ein Fehler in v6.1: hier stand nur ein return. Die
+     Registrierung zu unterlassen entfernt aber KEINEN bereits registrierten
+     Service Worker - der lief weiter und meldete weiter. Wer die App vorher
+     schon einmal offen hatte, sah die Leiste auch nach der Berichtigung.
+     Deshalb wird er jetzt aktiv abgemeldet und sein Zwischenspeicher
+     geloescht. */
+  if (window.Capacitor?.isNativePlatform?.()) {
+    navigator.serviceWorker.getRegistrations?.()
+      .then(list => Promise.all(list.map(r => r.unregister())))
+      .then(async (done) => {
+        if (!done.length) return;
+        try {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter(k => k.startsWith('mfe-')).map(k => caches.delete(k)));
+        } catch {}
+        console.info('[sw] In der App nicht noetig - abgemeldet:', done.length);
+      })
+      .catch(() => {});
+    return;
+  }
 
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -1814,6 +1920,8 @@ function init() {
   document.documentElement.setAttribute('data-theme', state.theme);
   document.documentElement.setAttribute('data-display', state.display);
   setSnap(state.snap);
+  splitMedia = matchMedia(SPLIT_QUERY);
+  splitMedia.addEventListener('change', updateSplit);
 
   mainGraph = new Graph($('#graph-canvas'));
   quizGraph = new Graph($('#quiz-canvas'));
@@ -1871,6 +1979,8 @@ function init() {
   applyLanguage();          // ruft updateExplorer() und renderInfo() mit auf
   invalidateTable();
   $('#btn-beamer').setAttribute('aria-pressed', String(state.display === 'beamer'));
+  renderHomeSelect();
+  updateSplit();
   requestAnimationFrame(drawThumbs);
 
   history_.stack = [snapshot()];
@@ -1889,6 +1999,11 @@ function init() {
   }
   registerServiceWorker();
 }
+
+/* Nur fuer die Selbsttests nach aussen gereicht. Die App selbst ruft diese
+   Funktionen intern auf; ohne diesen Zugang liesse sich das Abmelden des
+   Service Workers nicht pruefen. */
+MFE.app = { registerServiceWorker, get version() { return APP_VERSION; } };
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();
