@@ -1,4 +1,4 @@
-# MathFunctions Explorer v6.5.1
+# MathFunctions Explorer v7
 
 Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
 Läuft vollständig im Browser oder als Android-App — ohne Server, ohne Konto,
@@ -14,6 +14,59 @@ python3 -m http.server 8000     # oder: npm run serve
 
 Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
 funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## Was in v7 neu ist
+
+Drei Dinge, die ein Funktionenplotter strukturell nicht leisten kann — er
+zeigt, was man eingibt, und beurteilt nichts. Diese App weiß jetzt, **welchen
+Denkfehler** jemand gemacht hat.
+
+### Modus „Typische Fallen"
+
+Ein dritter Modus im Übungsteil. Die falschen Antworten sind nicht zufällig,
+sondern entsprechen jeweils einem bekannten Denkfehler. Wer danebengreift,
+bekommt nicht „falsch", sondern die Erklärung, was er sich vermutlich gedacht
+hat:
+
+> *„Du hast b für den y-Achsenabschnitt gehalten. Setze x = 0 ein:
+> a·0² + b·0 + c ergibt c. Der y-Achsenabschnitt ist immer c."*
+
+Der Katalog (`js/diagnose.js`) umfasst 11 Fehlvorstellungen über 9
+Darstellungsformen: b als y-Achsenabschnitt, Vorzeichen von d in der
+Scheitelpunktform, m und b vertauscht, „steiler" bei negativer Steigung,
+c beim Exponentialstartwert vergessen, exponentiell linear gedacht, Periode
+mit b verwechselt, Verschieberichtung bei (x − c), Definitionsbereich bei
+Wurzel und Logarithmus, Polstelle als Nullstelle, Knickstelle beim Betrag.
+
+### Fehleranalyse statt richtig/falsch
+
+Der Nachbau-Modus sagte bisher „c zu niedrig". Das sagt, *dass* etwas falsch
+ist, nicht *was gedacht wurde*. `analyseBuild()` erkennt jetzt:
+
+| Befund | Beispieltext |
+|---|---|
+| vertauscht | „m und b sind vertauscht. Prüfe, welcher Buchstabe wofür steht." |
+| Verschieberichtung | „In (x − d) verschiebt ein positiver Wert nach rechts, nicht nach links." |
+| Vorzeichen | „Bei m stimmt das Vorzeichen nicht – du hast −2 statt 2." |
+| verdoppelt / halbiert / Kehrwert | „a ist doppelt so groß wie nötig." |
+| daneben | „b ist um 1,5 zu hoch." |
+
+Denkfehler werden hervorgehoben, rein numerische Abweichungen zurückgenommen.
+Übungsteil und Quiz-Baukasten nutzen **dieselbe** Auswertung.
+
+### Darstellungswechsel
+
+Drei neue Aufgabentypen — Gleichung ↔ Graph ↔ Tabelle ist Kernkompetenz der
+Sekundarstufe I:
+
+- **Tabelle zur Gleichung** – Wertetabelle gegeben, welche Gleichung passt?
+- **Graph zur Tabelle** – Werte am Graphen ablesen und eintragen
+- **Punkte zur Gleichung** – zwei Punkte gegeben, Parameter bestimmen
+
+Alle drei stehen im Quiz-Baukasten, im Zufallsquiz und im Binärformat für
+Links.
 
 ---
 
@@ -361,6 +414,7 @@ js/billing.js            Adapter für den Kauf über Google Play
 js/i18n.js               alle Texte, deutsch und englisch
 js/functions.js          Zahleneingabe und Funktionskatalog
 js/graph.js              Renderer, Ausschnitt, Ableitung, Nullstellensuche
+js/diagnose.js           Fehlvorstellungen und Fehleranalyse
 js/nav.js                Bildschirmverlauf und Zurück-Knopf
 js/qr.js                 QR-Erzeugung, gegen eine Referenzbibliothek geprüft
 js/ui.js                 DOM-Helfer, Kurzmeldung, Reglergruppe
@@ -373,6 +427,7 @@ tools/smoke.mjs          Klickdurchlauf in jsdom
 tools/qr-selftest.mjs    QR gegen hinterlegte Referenzcodes
 tools/qr-verify.mjs      QR modulweise gegen eine fremde Bibliothek
 tools/quiz-codec.mjs     Quiz-Kodierung: verlustfrei, kompakt, robust
+tools/diagnose-test.mjs  Fallenkatalog und Fehleranalyse
 tools/make_icons.py      erzeugt die Web-Icons neu (braucht Pillow)
 tools/make_android_icons.py  erzeugt die Launcher-Icons nach android-res/
 android-res/             fertige Launcher-Icons, vom Workflow übernommen

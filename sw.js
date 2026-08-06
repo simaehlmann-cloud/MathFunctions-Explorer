@@ -14,7 +14,7 @@
    ========================================================================== */
 'use strict';
 
-const CACHE = 'mfe-v6.5.1';
+const CACHE = 'mfe-v7.0.0';
 const ASSETS = [
   './',
   './index.html',
@@ -29,6 +29,7 @@ const ASSETS = [
   './js/i18n.js',
   './js/functions.js',
   './js/graph.js',
+  './js/diagnose.js',
   './js/nav.js',
   './js/ui.js',
   './js/qr.js',

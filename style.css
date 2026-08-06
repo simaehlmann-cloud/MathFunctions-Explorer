@@ -887,3 +887,14 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
    "verborgen" darf von nichts uebersteuert werden.
    ========================================================================== */
 [hidden] { display: none !important; }
+
+/* --- Fehleranalyse und Darstellungswechsel -------------------------------- */
+.finding-list { display: grid; gap: .3rem; margin: .45rem 0 0; padding-left: 1.1rem; }
+.finding-list li { font-weight: 500; }
+/* Ein Denkfehler ist etwas anderes als "knapp daneben" - das soll man sehen. */
+.finding-list li.is-concept { font-weight: 650; }
+.finding-list li.is-close { opacity: .75; }
+.feedback .why { margin: .4rem 0 0; font-weight: 500; line-height: 1.5; }
+.answer-pair.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+.table-wrapper.compact { max-height: 14rem; overflow: auto; margin-bottom: .6rem; }
+.table-wrapper.compact table { font-size: .92rem; }

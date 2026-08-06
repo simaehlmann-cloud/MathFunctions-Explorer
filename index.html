@@ -291,6 +291,7 @@
     <div id="quiz-modes" class="segmented" role="group">
       <button class="seg-btn is-active" type="button" data-mode="match" aria-pressed="true" data-i18n="quiz.mode.match">Zuordnen</button>
       <button class="seg-btn" type="button" data-mode="build" aria-pressed="false" data-i18n="quiz.mode.build">Nachbauen</button>
+      <button class="seg-btn" type="button" data-mode="traps" aria-pressed="false" data-i18n="quiz.mode.traps">Typische Fallen</button>
     </div>
 
     <!-- Modus 1: Gleichung dem Graphen zuordnen -->
@@ -329,6 +330,28 @@
       <div class="action-row">
         <button id="btn-check" class="btn-primary" type="button" data-i18n="btn.check">Prüfen</button>
         <button id="btn-new-task" class="btn-secondary" type="button" data-i18n="btn.newTask">Neue Aufgabe</button>
+      </div>
+    </div>
+
+    <!-- Modus 3: Fragen, deren falsche Antworten typischen Denkfehlern
+         entsprechen. Wer danebengreift, bekommt keine Fehlermeldung, sondern
+         die Erklärung, was er sich vermutlich gedacht hat. -->
+    <div id="mode-traps" hidden>
+      <div class="quiz-head">
+        <h2 data-i18n="traps.title">Achtung, hier wird oft falsch gedacht.</h2>
+        <p class="quiz-score"><span data-i18n="quiz.score">Punkte</span>:
+          <strong id="trap-score">0</strong> / <span id="trap-total">0</span></p>
+      </div>
+      <div class="quiz-body">
+        <canvas id="trap-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+        <div>
+          <p id="trap-prompt" class="play-prompt"></p>
+          <div id="trap-options" class="options-grid"></div>
+          <p id="trap-feedback" class="feedback" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="action-row">
+        <button id="btn-next-trap" class="btn-primary" type="button" data-i18n="btn.nextQuiz">Nächste Aufgabe</button>
       </div>
     </div>
   </section>
@@ -547,6 +570,7 @@
 <script src="js/i18n.js"></script>
 <script src="js/functions.js"></script>
 <script src="js/graph.js"></script>
+<script src="js/diagnose.js"></script>
 <script src="js/nav.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/qr.js"></script>
