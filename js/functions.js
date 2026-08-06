@@ -147,6 +147,8 @@ const FUNCTIONS = {
   },
 
   quad_vertex: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['d'],
     category: 'quadratic',
     params: [
       { id: 'a', symbol: 'a', value: 1, min: -3, max: 3, step: 0.1, color: 1, desc: 'd.q.a', pool: [-2, -1, -0.5, 0.5, 1, 2] },
@@ -215,6 +217,8 @@ const FUNCTIONS = {
   },
 
   sinus: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['c'],
     category: 'trig',
     piAxis: true,                       // x-Achse standardmaessig in pi-Schritten
     params: [
@@ -238,6 +242,8 @@ const FUNCTIONS = {
   },
 
   tangens: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['c'],
     category: 'trig',
     piAxis: true,
     params: [
@@ -311,6 +317,8 @@ const FUNCTIONS = {
   },
 
   root: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['b'],
     category: 'root',
     params: [
       { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.root.a', pool: [-2, -1, 0.5, 1, 2] },
@@ -331,6 +339,8 @@ const FUNCTIONS = {
   },
 
   absolute: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['b'],
     category: 'absolute',
     params: [
       { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.abs.a', pool: [-2, -1, 0.5, 1, 2] },
@@ -349,6 +359,8 @@ const FUNCTIONS = {
   },
 
   logarithm: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['b'],
     category: 'logarithm',
     params: [
       { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.log.a', pool: [-2, -1, 0.5, 1, 2] },
@@ -369,6 +381,8 @@ const FUNCTIONS = {
   },
 
   rational: {
+    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
+    shiftParams: ['b'],
     category: 'rational',
     params: [
       { id: 'a', symbol: 'a', value: 1, min: -6, max: 6, step: 0.1, color: 1, desc: 'd.rat.a', pool: [-3, -2, -1, 1, 2, 3] },
@@ -405,6 +419,19 @@ const CATEGORY_FORMS = {
   rational: ['rational']
 };
 
+/**
+ * Toleranz beim Pruefen einer Antwort - an EINER Stelle, damit Quiz,
+ * Nachbau-Modus und Fehleranalyse dieselbe Schwelle verwenden.
+ *
+ * Frueher lagen hier drei Kopien mit je 2 % relativ. Bei einer
+ * Wachstumsaufgabe mit y = 1000 hiess das eine erlaubte Abweichung von 20 -
+ * da rutschte Falsches durch. Jetzt 1 %, und der absolute Sockel bindet an
+ * die Schrittweite des Reglers: ein Wert, den man mit dem Regler gar nicht
+ * genauer treffen kann, darf nicht als falsch gelten.
+ */
+const tolerance = (target, step = 0) =>
+  Math.max(step * 1.01, Math.abs(Number(target) || 0) * 0.01, 0.02);
+
 return { clamp, fmt, mfmt, coef, term, bracket, bracketPi, termCoef, tidy,
-         piLabel, parseLoose, FUNCTIONS, CATEGORY_FORMS };
+         piLabel, parseLoose, tolerance, FUNCTIONS, CATEGORY_FORMS };
 })();

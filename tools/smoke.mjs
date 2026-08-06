@@ -128,7 +128,7 @@ if (!window.navigator.clipboard) {
 }
 
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
-               'js/graph.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
+               'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 for (const f of files) {
   let src = readFileSync(path.join(ROOT, f), 'utf8');
   if (LITE && f === 'js/licence.js') src = src.replace(/const DEV_EDITION = '\w+';/, "const DEV_EDITION = 'lite';");
@@ -820,6 +820,97 @@ expect(window.document.documentElement.dataset.screen === 'app', 'und wechselt m
   bar.hidden = false;
   expect(shown(bar), '#update-bar ohne hidden ist sichtbar');
   bar.hidden = true;
+}
+
+// --- Modus "Typische Fallen" ----------------------------------------------
+click('#btn-home'); await tick();
+click('.fn-card[data-category="linear"]'); await tick();
+click('#tab-btn-quiz'); await tick();
+{
+  const btn = $('#quiz-modes [data-mode="traps"]');
+  expect(btn, 'der Fallen-Modus steht zur Auswahl');
+  click(btn); await tick(); await tick();
+  if (LITE) {
+    expect($('#mode-traps').hidden, 'Lite: der Fallen-Modus bleibt gesperrt');
+    if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
+  } else {
+    expect(!$('#mode-traps').hidden, 'der Fallen-Modus ist offen');
+    expect($('#trap-prompt').textContent.length > 10, 'eine Frage steht da');
+    const opts = $$('#trap-options .quiz-opt');
+    expect(opts.length >= 2, `mindestens zwei Antworten (${opts.length})`);
+
+    // Bewusst falsch antworten: dann MUSS eine Erklaerung erscheinen.
+    let wrongClicked = false;
+    for (const o of opts) {
+      if (!o.classList.contains('is-correct')) { click(o); wrongClicked = true; break; }
+    }
+    await tick();
+    expect(wrongClicked, 'eine Antwort liess sich waehlen');
+    expect($$('#trap-options .quiz-opt.is-correct').length === 1, 'die richtige Antwort wird markiert');
+    const fb = $('#trap-feedback');
+    expect(fb.textContent.length > 20, 'es gibt eine ausfuehrliche Rueckmeldung');
+    expect(!!fb.querySelector('.why'), 'und eine benannte Erklaerung des Denkfehlers');
+    expect($('#trap-total').textContent === '1', 'die Aufgabe wird gezaehlt');
+
+    click('#btn-next-trap'); await tick();
+    expect($$('#trap-options .quiz-opt.is-correct').length === 0, 'die naechste Aufgabe ist wieder offen');
+  }
+}
+
+// --- Fehleranalyse im Nachbau-Modus ---------------------------------------
+if (!LITE) {
+  click($('#quiz-modes [data-mode="build"]')); await tick(); await tick();
+  expect(!$('#mode-build').hidden, 'Nachbau-Modus offen');
+  // Absichtlich das Vorzeichen von m drehen
+  const target = window.MFE.app.practiceTarget?.();
+  if (target) {
+    const slider = $('#pr-slider-m') || $('#pr-val-m');
+    const field = $('#pr-val-m');
+    field.value = String(-target.m);
+    field.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await tick();
+    click('#btn-check'); await tick();
+    const items = $$('#practice-feedback .finding-list li');
+    expect(items.length > 0, 'die Auswertung nennt einzelne Befunde');
+    const txt = items.map(li => li.textContent).join(' ');
+    expect(/Vorzeichen|sign/i.test(txt) || /vertauscht|swapped/i.test(txt) || /zu hoch|zu niedrig|too/i.test(txt),
+           `der Befund ist benannt ("${txt.slice(0, 60)}")`);
+    expect($$('#practice-feedback .finding-list li.is-concept').length > 0
+        || items.length > 0, 'Denkfehler werden hervorgehoben');
+  }
+}
+
+// --- Darstellungswechsel ---------------------------------------------------
+if (!LITE) {
+  const Q = window.MFE.quiz;
+  for (const type of ['tableToEq', 'graphToTable', 'pointsToEq']) {
+    let task = null;
+    for (let i = 0; i < 40 && !task; i++) task = Q.randomTask?.(type, 'linear');
+    expect(!!task, `${type}: eine Zufallsaufgabe laesst sich bauen`);
+    if (task) {
+      const back = Q.sanitizeQuiz({ title: 'T', tasks: [task] });
+      expect(!!back, `${type}: die Aufgabe uebersteht die Pruefung`);
+      const code = Q.encodeQuiz(back);
+      const round = Q.decodeQuiz(code);
+      expect(round?.tasks?.[0]?.type === type, `${type}: uebersteht den Link`);
+    }
+  }
+  // Und einmal wirklich abspielen
+  const quiz = Q.sanitizeQuiz({
+    title: 'Darstellungswechsel',
+    tasks: [Q.randomTask('tableToEq', 'linear'), Q.randomTask('graphToTable', 'linear')].filter(Boolean)
+  });
+  if (quiz) {
+    Q.startQuiz(quiz); await tick();
+    expect($('#screen-play').classList.contains('is-active'), 'Darstellungswechsel-Quiz startet');
+    expect($('#play-body table'), 'die Wertetabelle wird angezeigt');
+    click($$('#play-body .quiz-opt')[0]); await tick();
+    click('#btn-play-next'); await tick();
+    expect($$('#play-body input').length === 3, 'drei Felder zum Eintragen der Werte');
+    click('#btn-play-check'); await tick();
+    expect($('#play-feedback').textContent.length > 0, 'die Werteaufgabe wird ausgewertet');
+    click('#btn-play-next'); await tick();
+  }
 }
 
 // Sprache umschalten

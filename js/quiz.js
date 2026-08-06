@@ -34,8 +34,20 @@ const MAX_TEXT    = 200;
 const MAX_OPTIONS = 6;
 const MAX_LINK    = 12000;        // Zeichen; darueber weigert sich mancher Browser
 
-const TYPES = ['match', 'build', 'value', 'readoff', 'truefalse', 'choice'];
-const GRAPH_TYPES = new Set(['match', 'build', 'value', 'readoff', 'truefalse']);
+/* ACHTUNG: TYPES ist Teil des Binaerformats fuer Links (der Index steht im
+   Code). Nur HINTEN anhaengen - eine Umsortierung macht jeden bereits
+   verteilten Link unlesbar. */
+const TYPES = ['match', 'build', 'value', 'readoff', 'truefalse', 'choice',
+               'tableToEq', 'graphToTable', 'pointsToEq'];
+
+/** Aufgaben mit Funktion und Parametern (alles ausser der freien Frage). */
+const GRAPH_TYPES = new Set(['match', 'build', 'value', 'readoff', 'truefalse',
+                             'tableToEq', 'graphToTable', 'pointsToEq']);
+
+/** Aufgaben, bei denen tatsaechlich ein Koordinatensystem gezeichnet wird.
+    Beim Darstellungswechsel ist genau das der Punkt: aus der TABELLE oder
+    aus PUNKTEN auf die Gleichung schliessen - ohne den Graphen zu sehen. */
+const CANVAS_TYPES = new Set(['match', 'build', 'value', 'readoff', 'truefalse', 'graphToTable']);
 
 /* Von aussen gesetzt (app.js), damit quiz.js nichts ueber den Rest der App
    wissen muss. */
@@ -115,6 +127,25 @@ function sanitizeTask(raw) {
     task.what = what;
     return task;
   }
+  if (type === 'tableToEq') {
+    const opts = Array.isArray(raw.options) ? raw.options : [];
+    task.options = opts.map(o => sanitizeValues(form, o)).filter(Boolean).slice(0, 3);
+    if (!task.options.length) task.options = makeDistractors(form, values, 3);
+    // Eine Tabellenaufgabe ohne definierte Werte waere leer.
+    if (!sampleRows(form, values)) return null;
+    return task;
+  }
+  if (type === 'graphToTable' || type === 'pointsToEq') {
+    const want = type === 'pointsToEq' ? 2 : 3;
+    const xs = Array.isArray(raw.xs) ? raw.xs.map(Number).filter(Number.isFinite) : [];
+    task.xs = xs.slice(0, want).map(x => clamp(Math.round(x * 1e4) / 1e4, -1e4, 1e4));
+    if (task.xs.length !== want) return null;
+    // Jede genannte Stelle muss auch einen Wert haben.
+    if (!task.xs.every(x => Number.isFinite(FUNCTIONS[form].f(x, values)))) return null;
+    if (new Set(task.xs).size !== want) return null;      // keine doppelten Stellen
+    return task;
+  }
+
   if (type === 'truefalse') {
     task.statement = cleanText(raw.statement, MAX_TEXT);
     if (!task.statement) return null;
@@ -280,10 +311,13 @@ function packQuiz(quiz) {
     if (fi < 0) throw new Error('unbekannte Darstellungsform: ' + task.form);
     w.u8(fi);
     writeValues(w, task.form, task.values);
-    if (task.type === 'match') {
+    if (task.type === 'match' || task.type === 'tableToEq') {
       const opts = task.options ?? [];
       w.u8(opts.length);
       for (const o of opts) writeValues(w, task.form, o);
+    } else if (task.type === 'graphToTable' || task.type === 'pointsToEq') {
+      w.u8(task.xs.length);
+      for (const x of task.xs) w.num(x);
     } else if (task.type === 'value') {
       w.num(task.x0);
     } else if (task.type === 'readoff') {
@@ -323,11 +357,16 @@ function unpackQuiz(bytes) {
     const form = FORM_ORDER[r.u8()];
     if (!form || !FUNCTIONS[form]) return null;
     const task = { type, form, values: readValues(r, form) };
-    if (type === 'match') {
+    if (type === 'match' || type === 'tableToEq') {
       const n = r.u8();
       if (n > 8) return null;
       task.options = [];
       for (let k = 0; k < n; k++) task.options.push(readValues(r, form));
+    } else if (type === 'graphToTable' || type === 'pointsToEq') {
+      const n = r.u8();
+      if (n > 8) return null;
+      task.xs = [];
+      for (let k = 0; k < n; k++) task.xs.push(r.num());
     } else if (type === 'value') {
       task.x0 = r.num();
     } else if (type === 'readoff') {
@@ -420,6 +459,11 @@ function makeDistractors(form, correct, n = 3) {
   return out;
 }
 
+/** Tabellenzeilen fuer die Darstellungswechsel-Aufgaben. Liegt in
+ *  js/diagnose.js, weil dort auch sichergestellt wird, dass nur definierte
+ *  Werte herauskommen (Wurzel, Logarithmus, Polstellen). */
+const sampleRows = (form, values, n = 5) => MFE.diagnose.sampleTable(form, values, n, -2, 1);
+
 const eqText = (form, v, name = 'f') => `${name}(x) = ${FUNCTIONS[form].rhs(v)}`;
 
 /** Kurzbeschreibung einer Aufgabe fuer die Liste im Editor. */
@@ -427,6 +471,9 @@ function taskLabel(task) {
   if (task.type === 'choice') return task.question;
   if (task.type === 'truefalse') return task.statement;
   if (task.type === 'value') return `${t('type.value')}: f(${mfmt(task.x0)})`;
+  if (task.type === 'graphToTable' || task.type === 'pointsToEq') {
+    return `${t('type.' + task.type)}: x = ${task.xs.map(x => mfmt(x)).join(', ')}`;
+  }
   if (task.type === 'readoff') return `${t('type.readoff')}: ${t('poi.' + (task.what === 'yint' ? 'yint' : task.what))}`;
   return `${t('type.' + task.type)}: ${eqText(task.form, task.values)}`;
 }
@@ -571,6 +618,8 @@ function draftDefaults(type) {
   const draft = { type, form, values };
   if (type === 'value') draft.x0 = 2;
   if (type === 'readoff') draft.what = FUNCTIONS[form].vertex ? 'vertex' : 'yint';
+  if (type === 'graphToTable') draft.xs = [-1, 0, 2];
+  if (type === 'pointsToEq') draft.xs = [-1, 2];
   if (type === 'truefalse') { draft.statement = ''; draft.answer = true; }
   if (type === 'choice') { draft.question = ''; draft.options = ['', '']; draft.correct = 0; }
   return draft;
@@ -664,6 +713,20 @@ function renderEditor() {
       const n = parseLoose(v, NaN);
       if (Number.isFinite(n)) d.x0 = n;
     })));
+  }
+
+  if (d.type === 'graphToTable' || d.type === 'pointsToEq') {
+    const want = d.type === 'pointsToEq' ? 2 : 3;
+    d.xs = Array.isArray(d.xs) && d.xs.length === want ? d.xs : (d.type === 'pointsToEq' ? [-1, 2] : [-1, 0, 2]);
+    const wrap = document.createElement('div');
+    wrap.className = 'answer-pair three';
+    for (let i = 0; i < want; i++) {
+      wrap.append(field(`x${i + 1}`, textEl(`editor-x${i + 1}`, fmt(d.xs[i], 4), (v) => {
+        const n = parseLoose(v, NaN);
+        if (Number.isFinite(n)) d.xs[i] = n;
+      })));
+    }
+    box.append(field(t(d.type === 'pointsToEq' ? 'quiz.atPoints' : 'quiz.atValues'), wrap));
   }
 
   if (d.type === 'readoff') {
@@ -776,7 +839,16 @@ function commitTask() {
     return;
   }
   const prepared = { ...d };
-  if (d.type === 'match') prepared.options = makeDistractors(d.form, d.values, 3);
+  if (d.type === 'match' || d.type === 'tableToEq') {
+    prepared.options = makeDistractors(d.form, d.values, 3);
+  }
+  // Stellen ausserhalb des Definitionsbereichs kommentarlos abzulehnen war
+  // frueher der haeufigste Stolperstein - hier dieselbe konkrete Meldung.
+  if ((d.type === 'graphToTable' || d.type === 'pointsToEq')
+      && !d.xs.every(x => Number.isFinite(FUNCTIONS[d.form]?.f(x, d.values)))) {
+    toast(t('quiz.xOutside', { x: d.xs.map(x => mfmt(x)).join(', ') }));
+    return;
+  }
   const clean = sanitizeTask(prepared);
   if (!clean) { toast(t('quiz.taskIncomplete')); return; }
   if (builder.editing >= 0) builder.quiz.tasks[builder.editing] = clean;
@@ -898,7 +970,7 @@ function renderTask() {
   prompt.className = 'play-prompt';
   body.append(prompt);
 
-  if (GRAPH_TYPES.has(task.type)) {
+  if (CANVAS_TYPES.has(task.type)) {
     const cv = document.createElement('canvas');
     cv.id = 'play-canvas';
     cv.className = 'graph-canvas short';
@@ -907,8 +979,12 @@ function renderTask() {
     body.append(cv);
   }
 
-  if (task.type === 'match') {
-    prompt.textContent = t('quiz.title');
+  if (task.type === 'match' || task.type === 'tableToEq') {
+    // Darstellungswechsel: dieselbe Frage, aber die Vorlage ist eine
+    // Wertetabelle statt eines Graphen. Genau dieser Wechsel zwischen
+    // Gleichung, Graph und Tabelle steht in jedem Kerncurriculum.
+    prompt.textContent = t(task.type === 'match' ? 'quiz.title' : 'rep.fromTable');
+    if (task.type === 'tableToEq') body.append(buildTable(task));
     // Reihenfolge pro Durchgang mischen, aber die richtige Antwort merken.
     const all = [task.values, ...task.options];
     player.order = all.map((_, i) => i).sort(() => Math.random() - 0.5);
@@ -937,6 +1013,31 @@ function renderTask() {
       onChange: () => drawPlayGraph()
     };
     renderSliderGroup(sliders, player.ctx);
+  }
+
+  if (task.type === 'graphToTable') {
+    prompt.textContent = t('rep.toTable');
+    const wrap = document.createElement('div');
+    wrap.className = 'answer-pair three';
+    task.xs.forEach((x, i) => wrap.append(answerField('play-answer' + (i ? '-' + (i + 1) : ''), `f(${mfmt(x)})`)));
+    body.append(wrap);
+  }
+
+  if (task.type === 'pointsToEq') {
+    const d = FUNCTIONS[task.form];
+    prompt.textContent = t('rep.fromPoints', {
+      pts: task.xs.map(x => `(${mfmt(x)} | ${mfmt(d.f(x, task.values))})`).join('  ')
+    });
+    const eq = document.createElement('p');
+    eq.className = 'editor-eq';
+    eq.textContent = `f(x) = ${d.rhsPattern ? d.rhsPattern() : eqPattern(task.form)}`;
+    body.append(eq);
+    const wrap = document.createElement('div');
+    wrap.className = 'answer-pair three';
+    d.params.forEach((prm, i) => {
+      wrap.append(answerField('play-answer' + (i ? '-' + (i + 1) : ''), host.symbolOf(prm.id, task.form)));
+    });
+    body.append(wrap);
   }
 
   if (task.type === 'value') {
@@ -989,7 +1090,48 @@ function renderTask() {
     $('#btn-play-check').hidden = true;
   }
 
-  if (GRAPH_TYPES.has(task.type)) requestAnimationFrame(drawPlayGraph);
+  if (CANVAS_TYPES.has(task.type)) requestAnimationFrame(drawPlayGraph);
+}
+
+/** Wertetabelle als DOM - fuer die Aufgabe "welche Gleichung passt zu dieser
+ *  Tabelle?". */
+function buildTable(task) {
+  const rows = sampleRows(task.form, task.values) ?? [];
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrapper compact';
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  for (const label of ['x', 'f(x)']) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = label;
+    trh.append(th);
+  }
+  thead.append(trh);
+  const tbody = document.createElement('tbody');
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+    for (const v of [row.x, row.y]) {
+      const td = document.createElement('td');
+      td.textContent = mfmt(v);
+      tr.append(td);
+    }
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
+/** Gleichung mit Platzhaltern statt Zahlen - zeigt, was gesucht ist. */
+function eqPattern(form) {
+  const d = FUNCTIONS[form];
+  return d.tokens().map(tok => {
+    if (tok.text !== undefined) return tok.text;
+    if (tok.sup !== undefined) return '^' + tok.sup;
+    return host.symbolOf(tok.param, form);
+  }).join('');
 }
 
 function answerField(id, label) {
@@ -1061,18 +1203,50 @@ function checkAnswer() {
     }
   }
 
-  if (task.type === 'build') {
+  if (task.type === 'graphToTable') {
     const d = FUNCTIONS[task.form];
     const wrong = [];
-    for (const p of d.params) {
-      const diff = player.ctx.values[p.id] - task.values[p.id];
-      const tol = MFE.math.tolerance(task.values[p.id], p.step);
-      if (Math.abs(diff) > tol) {
-        wrong.push(`${host.symbolOf(p.id, task.form)} ${t(diff > 0 ? 'build.tooHigh' : 'build.tooLow')}`);
+    let allOk = true;
+    task.xs.forEach((x, i) => {
+      const want = d.f(x, task.values);
+      const given = parseLoose($('#play-answer' + (i ? '-' + (i + 1) : ''))?.value, NaN);
+      if (!(Number.isFinite(given) && Math.abs(given - want) <= readTol(want))) {
+        allOk = false;
+        wrong.push(`f(${mfmt(x)}) = ${mfmt(want)}`);
       }
-    }
-    ok = wrong.length === 0;
-    solution = ok ? eqText(task.form, task.values) : `${t('build.close')} ${wrong.join(', ')}`;
+    });
+    ok = allOk;
+    solution = wrong.join(', ');
+  }
+
+  if (task.type === 'pointsToEq') {
+    // Geprueft werden die Parameter, nicht die Kurve: gesucht ist die
+    // Gleichung, und die soll auch hingeschrieben werden.
+    const d = FUNCTIONS[task.form];
+    let allOk = true;
+    d.params.forEach((prm, i) => {
+      const want = task.values[prm.id];
+      const given = parseLoose($('#play-answer' + (i ? '-' + (i + 1) : ''))?.value, NaN);
+      if (!(Number.isFinite(given) && Math.abs(given - want) <= tolerance(want, prm.step))) allOk = false;
+    });
+    ok = allOk;
+    solution = eqText(task.form, task.values);
+  }
+
+  if (task.type === 'build') {
+    // Dieselbe Analyse wie im Uebungsteil - nicht zwei Auswertungen, die
+    // frueher oder spaeter auseinanderlaufen.
+    const res = MFE.diagnose.analyseBuild(task.form, task.values, player.ctx.values);
+    ok = res.solved;
+    solution = ok
+      ? eqText(task.form, task.values)
+      : res.findings
+          .map(f => t('find.' + f.kind, {
+            ...f.vars,
+            a: host.symbolOf(f.ids[0], task.form),
+            b: f.ids[1] ? host.symbolOf(f.ids[1], task.form) : ''
+          }))
+          .join(' \u00b7 ');
   }
 
   finish(ok, solution);
@@ -1168,6 +1342,16 @@ function randomTask(type, form) {
   const d = FUNCTIONS[form];
 
   if (type === 'match') return sanitizeTask({ type, form, values: vals, options: makeDistractors(form, vals, 3) });
+  if (type === 'tableToEq') return sanitizeTask({ type, form, values: vals, options: makeDistractors(form, vals, 3) });
+
+  if (type === 'graphToTable' || type === 'pointsToEq') {
+    const want = type === 'pointsToEq' ? 2 : 3;
+    const xs = [];
+    for (let k = -4; k <= 4 && xs.length < want; k++) {
+      if (Number.isFinite(d.f(k, vals))) xs.push(k);
+    }
+    return xs.length === want ? sanitizeTask({ type, form, values: vals, xs }) : null;
+  }
   if (type === 'build') return sanitizeTask({ type, form, values: vals });
 
   if (type === 'value') {
@@ -1467,7 +1651,7 @@ function bind() {
     }
     const pos = Number(opt.dataset.pos);
     const src = player.order[pos];
-    if (task.type === 'match') {
+    if (task.type === 'match' || task.type === 'tableToEq') {
       const rightPos = player.order.indexOf(0);      // 0 = die richtige Kurve
       const rightEl = $(`#play-body .quiz-opt[data-pos="${rightPos}"]`);
       answerByClick(src === 0, eqText(task.form, task.values), opt, rightEl);
@@ -1549,6 +1733,6 @@ return {
   init, openList, openBuilder, startQuiz, importFromHash, relabel,
   buildRandomQuiz, showQr, resultText,
   loadAll, getQuiz, sanitizeQuiz, decodeQuiz, encodeQuiz, linkFor,
-  randomValues, makeDistractors, eqText, TYPES
+  randomValues, makeDistractors, randomTask, eqText, TYPES
 };
 })();

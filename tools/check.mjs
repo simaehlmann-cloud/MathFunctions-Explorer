@@ -24,7 +24,7 @@ const problems = [];
 const note = (msg) => problems.push(msg);
 
 const SCRIPTS = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
-                 'js/graph.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
+                 'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 
 const html = await read('index.html');
 const htmlIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
@@ -350,6 +350,109 @@ const NARROWEST_DEVICE = 360;
 if (!/\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/.test(cssClean)) {
   note('style.css: die Regel [hidden] { display: none !important; } fehlt - '
      + 'verborgene Elemente bleiben sichtbar, sobald irgendeine Regel display setzt');
+}
+
+/* --- 12 · Namensraum ------------------------------------------------------
+   Jeder Zugriff MFE.modul.name muss auch wirklich exportiert sein. Genau
+   das ging einmal schief: eine Ersetzung im Aufbau von functions.js griff
+   still daneben, MFE.math.tolerance existierte nie - und jede Antwortpruefung
+   im Quiz waere mit einem TypeError abgebrochen. Aufgefallen ist es erst
+   Wochen spaeter durch einen neuen Test. */
+{
+  const MODULE_FILES = {
+    math: 'js/functions.js', graph: 'js/graph.js', ui: 'js/ui.js',
+    quiz: 'js/quiz.js', nav: 'js/nav.js', licence: 'js/licence.js',
+    billing: 'js/billing.js', diagnose: 'js/diagnose.js', i18n: 'js/i18n.js'
+  };
+
+  /** Namen aus dem abschliessenden `return { ... }` eines Moduls lesen.
+   *  Die Klammern muessen gezaehlt werden: nav.js enthaelt
+   *  `get current() { return { ...current }; }` - ein nicht-gieriger
+   *  Ausdruck bricht am inneren `}` ab und uebersieht den Rest. */
+  async function exportsOf(file) {
+    const src = await read(file);
+    /* Nicht das LETZTE `return {` nehmen: in nav.js steht das innerhalb von
+       `get current() { return { ...current }; }`. Gesucht ist das Objekt,
+       auf das unmittelbar der Abschluss `})();` des Moduls folgt. */
+    const balancedEnd = (from) => {
+      let depth = 0;
+      for (let i = from; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) return i; }
+      }
+      return -1;
+    };
+    let body = null;
+    for (const hit of [...src.matchAll(/return\s*\{/g)]) {
+      const open = src.indexOf('{', hit.index);
+      const end = balancedEnd(open);
+      if (end < 0) continue;
+      if (/^\s*;?\s*\}\)\(\);/.test(src.slice(end + 1))) body = src.slice(open + 1, end);
+    }
+    if (body === null) return null;
+    const m = [null, body];
+    const names = new Set();
+    for (const part of m[1].split(',')) {
+      const n = part.trim().replace(/\/\*[\s\S]*?\*\//g, '').trim();
+      const key = n.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)\s*(?::|\(|$)/);
+      if (key) names.add(key[1]);
+    }
+    // get-Zugriffe wie `get depth() { ... }`
+    for (const g of m[1].matchAll(/\bget\s+([A-Za-z_$][\w$]*)\s*\(/g)) names.add(g[1]);
+    return names;
+  }
+
+  const cache = {};
+  for (const [mod, file] of Object.entries(MODULE_FILES)) {
+    if (await exists(file)) cache[mod] = await exportsOf(file);
+  }
+
+  for (const m of js.matchAll(/\bMFE\.(\w+)\.(\w+)\b/g)) {
+    const [, mod, name] = m;
+    const names = cache[mod];
+    if (!names || !names.size) continue;      // Modul nicht lesbar: nicht raten
+    if (mod === 'i18n' && ['lang', 't', 'has'].includes(name)) continue;
+    if (mod === 'colors') continue;
+    if (!names.has(name)) {
+      const msg = `MFE.${mod}.${name} wird verwendet, aber von ${MODULE_FILES[mod]} nicht exportiert`;
+      if (!problems.includes(msg)) note(msg);      // jede Stelle nur einmal melden
+    }
+  }
+}
+
+/* --- 13 · Fehlvorstellungen ----------------------------------------------
+   Jede Kennung aus js/diagnose.js braucht ihre Erklaerung. Fehlt sie, zeigt
+   die App bei einer falschen Antwort nur "falsch" - und genau die Erklaerung
+   ist der Grund, warum es diesen Modus gibt. */
+if (await exists('js/diagnose.js')) {
+  const diag = await read('js/diagnose.js');
+
+  // Kennungen der Fallen (id:) und der Fehlvorstellungen (mis:)
+  const traps = [...diag.matchAll(/^\s*id:\s*'([\w.]+)'/gm)].map(m => m[1]);
+  const misses = [...diag.matchAll(/mis:\s*'([\w.]+)'/g)].map(m => m[1]);
+  const prompts = [...diag.matchAll(/promptKey:\s*(?:'([\w.]+)'|form === 'root' \? '([\w.]+)' : '([\w.]+)')/g)]
+    .flatMap(m => [m[1], m[2], m[3]]).filter(Boolean);
+  const rawAnswers = [...diag.matchAll(/label:\s*'(mis\.answer\.[\w.]+)'/g)].map(m => m[1]);
+  // Auch die bedingten Antworten: v.c > 0 ? 'a' : 'b'
+  const condAnswers = [...diag.matchAll(/'(mis\.answer\.[\w.]+)'/g)].map(m => m[1]);
+
+  for (const id of new Set(traps)) {
+    if (!de.has('note.' + id)) note(`Falle "${id}": der Merksatz note.${id} fehlt`);
+  }
+  for (const id of new Set(misses)) {
+    if (!de.has('why.' + id)) note(`Fehlvorstellung "${id}": die Erklaerung why.${id} fehlt`);
+  }
+  for (const key of new Set([...prompts, ...rawAnswers, ...condAnswers])) {
+    if (!de.has(key)) note(`Fallen-Modus: der Schluessel "${key}" fehlt im Woerterbuch`);
+  }
+
+  // Und die Befunde der Fehleranalyse
+  for (const m of diag.matchAll(/kind:\s*'(\w+)'/g)) {
+    if (!de.has('find.' + m[1])) note(`Fehleranalyse: der Text find.${m[1]} fehlt`);
+  }
+  for (const m of diag.matchAll(/kind:\s*(?:isShift \?\s*)?'(\w+)'\s*:\s*'(\w+)'/g)) {
+    for (const k of [m[1], m[2]]) if (!de.has('find.' + k)) note(`Fehleranalyse: der Text find.${k} fehlt`);
+  }
 }
 
 /* --- Ergebnis ------------------------------------------------------------ */

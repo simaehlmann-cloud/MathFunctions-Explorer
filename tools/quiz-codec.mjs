@@ -17,7 +17,7 @@ global.getComputedStyle = () => ({ getPropertyValue: () => '#000' });
 global.location = { origin: 'https://e.org', pathname: '/' };
 const R = (f) => new URL('../' + f, import.meta.url);
 const load = (f) => eval(readFileSync(R(f), 'utf8').replace('window.MFE = window.MFE || {};', ''));
-load('js/licence.js'); load('js/functions.js'); load('js/graph.js');
+load('js/licence.js'); load('js/functions.js'); load('js/graph.js'); load('js/diagnose.js');
 MFE.ui = { $: () => null, $$: () => [], toast: () => {}, renderSliderGroup: () => {}, debounce: (f) => f };
 load('js/quiz.js');
 const Q = MFE.quiz, { FUNCTIONS, CATEGORY_FORMS } = MFE.math;
@@ -50,6 +50,16 @@ function randTask(type) {
   }
   if (type === 'readoff') task.what = FUNCTIONS[form].vertex ? rnd(['yint','root','vertex']) : rnd(['yint','root']);
   if (type === 'truefalse') { task.statement = 'Der Graph steigt – wirklich?'; task.answer = Math.random()<0.5; }
+  if (type === 'tableToEq') task.options = Q.makeDistractors(form, values, 3);
+  if (type === 'graphToTable' || type === 'pointsToEq') {
+    const want = type === 'pointsToEq' ? 2 : 3;
+    const xs = [];
+    for (let k = -4; k <= 4 && xs.length < want; k++) {
+      if (Number.isFinite(FUNCTIONS[form].f(k, values))) xs.push(k);
+    }
+    if (xs.length !== want) return randTask('match');
+    task.xs = xs;
+  }
   return task;
 }
 
@@ -81,7 +91,11 @@ for (let it = 0; it < 400; it++) {
     if (a.type === 'truefalse') { check(a.statement === b.statement, 'Aussage weicht ab'); check(a.answer === b.answer, 'Wahrheitswert weicht ab'); }
     if (a.type === 'choice') { check(a.question === b.question, 'Frage weicht ab'); check(a.correct === b.correct, 'richtige Antwort weicht ab');
       check(JSON.stringify(a.options) === JSON.stringify(b.options), 'Antworten weichen ab'); }
-    if (a.type === 'match') check((a.options||[]).length === (b.options||[]).length, 'Distraktoren weichen ab');
+    if (a.type === 'match' || a.type === 'tableToEq') check((a.options||[]).length === (b.options||[]).length, 'Distraktoren weichen ab');
+    if (a.xs) {
+      check(a.xs.length === (b.xs||[]).length, `${a.type}: Anzahl der Stellen weicht ab`);
+      a.xs.forEach((x, k) => check(Math.abs(x - b.xs[k]) < 1e-4, `${a.type}: Stelle ${k} weicht ab`));
+    }
   }
   const oldLen = Buffer.from(JSON.stringify({title: clean.title, tasks: clean.tasks})).length;
   sumNew += code.length; sumOld += Math.ceil(oldLen*4/3); cases++;

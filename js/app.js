@@ -28,7 +28,7 @@ const BEAMER_SCALE = 1.55;
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '6.5.1';
+const APP_VERSION = '7.0.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -1041,25 +1041,151 @@ function drawPractice() {
   });
 }
 
+/**
+ * Auswertung im Nachbau-Modus.
+ * Frueher stand hier nur "c zu niedrig". Das sagt, DASS etwas falsch ist,
+ * aber nicht, was gedacht wurde. MFE.diagnose erkennt Vorzeichenfehler,
+ * vertauschte Parameter, verdoppelte oder halbierte Werte und die
+ * Verschieberichtung - und genau das wird hier in Worte gefasst.
+ */
 function checkPractice() {
   if (!practice.target) return;
-  const d = FUNCTIONS[practice.form];
-  const wrong = [];
-  let ok = 0;
-  for (const p of d.params) {
-    const diff = practice.ctx.values[p.id] - practice.target[p.id];
-    const tol = MFE.math.tolerance(practice.target[p.id], p.step);
-    if (Math.abs(diff) <= tol) ok++;
-    else wrong.push(`${symbolOf(p.id, practice.form)} ${t(diff > 0 ? 'build.tooHigh' : 'build.tooLow')}`);
-  }
+  const res = MFE.diagnose.analyseBuild(practice.form, practice.target, practice.ctx.values);
   const fb = $('#practice-feedback');
-  if (!wrong.length) {
+  fb.replaceChildren();
+
+  if (res.solved) {
     fb.className = 'feedback ok';
     fb.textContent = `${t('build.done')} ${MFE.quiz.eqText(practice.form, practice.target)}`;
-  } else {
-    fb.className = 'feedback err';
-    fb.textContent = `${t('build.hitCount', { ok, all: d.params.length })} ${t('build.close')} ${wrong.join(', ')}`;
+    return;
   }
+
+  fb.className = 'feedback err';
+  const head = document.createElement('strong');
+  head.textContent = t('build.hitCount', { ok: res.hits, all: res.total });
+  fb.append(head);
+
+  const list = document.createElement('ul');
+  list.className = 'finding-list';
+  for (const f of res.findings) {
+    const li = document.createElement('li');
+    li.textContent = findingText(practice.form, f);
+    // Ein rein numerischer Befund, der knapp daneben liegt, ist ein anderer
+    // Hinweis als ein Denkfehler - das soll man auch sehen.
+    li.className = f.close ? 'is-close' : (f.kind === 'tooHigh' || f.kind === 'tooLow' ? '' : 'is-concept');
+    list.append(li);
+  }
+  fb.append(list);
+}
+
+/** Setzt einen Befund der Fehleranalyse in einen Satz um. */
+function findingText(form, f) {
+  const sym = (id) => symbolOf(id, form);
+  const vars = { ...f.vars, a: sym(f.ids[0]), b: f.ids[1] ? sym(f.ids[1]) : '' };
+  return t('find.' + f.kind, vars);
+}
+
+/* ==========================================================================
+   11b · UEBEN - Modus "Typische Fallen"
+   Die falschen Antworten sind nicht zufaellig, sondern entsprechen jeweils
+   einem bekannten Denkfehler (siehe js/diagnose.js). Wer eine davon waehlt,
+   bekommt die Erklaerung dazu - das ist der Punkt, an dem sich diese App von
+   einem Funktionenplotter unterscheidet.
+   ========================================================================== */
+const traps = { task: null, locked: false, score: 0, total: 0 };
+let trapGraph = null;
+
+/** Sucht eine Funktionsklasse, zu der es ueberhaupt Fallen gibt. */
+function trapForm() {
+  const current = curve(0).form;
+  if (MFE.diagnose.forForm(current).length) return current;
+  const usable = Object.keys(FUNCTIONS).filter(f =>
+    MFE.diagnose.forForm(f).length && licence.has('cat.' + FUNCTIONS[f].category));
+  return usable[0] ?? null;
+}
+
+function newTrapTask() {
+  const form = trapForm();
+  if (!form) { $('#trap-prompt').textContent = t('traps.none'); return; }
+
+  // Nicht jede Wertekombination laesst eine Falle zuschnappen - bei b = 0
+  // gibt es keine Verwechslung von b und c. Also wuerfeln, bis es passt.
+  let task = null;
+  for (let i = 0; i < 60 && !task; i++) {
+    task = MFE.diagnose.makeTrap(form, MFE.quiz.randomValues(form));
+  }
+  if (!task) { $('#trap-prompt').textContent = t('traps.none'); return; }
+
+  traps.task = task;
+  traps.locked = false;
+  $('#trap-prompt').textContent = t(task.promptKey, task.promptVars);
+  const fb = $('#trap-feedback');
+  fb.replaceChildren();
+  fb.className = 'feedback';
+
+  const box = $('#trap-options');
+  box.replaceChildren();
+  task.answers.forEach((a, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'quiz-opt';
+    b.dataset.index = String(i);
+    // raw: die Beschriftung ist selbst ein Uebersetzungsschluessel
+    b.textContent = `${String.fromCharCode(65 + i)})  ${a.raw ? t(a.label) : a.label}`;
+    box.append(b);
+  });
+  drawTrap();
+}
+
+function drawTrap() {
+  const cv = $('#trap-canvas');
+  if (!traps.task || !cv) return;
+  if (!trapGraph || trapGraph.canvas !== cv) trapGraph = new Graph(cv);
+  if (!trapGraph.measure()) return;
+  drawScene(trapGraph, {
+    curves: [{ form: traps.task.form, values: traps.task.values, color: '--graph' }],
+    activeIndex: 0,
+    view: quizView(traps.task.form),
+    opts: BLANK_OPTS,
+    scale: sceneScale()
+  });
+}
+
+function answerTrap(index) {
+  if (traps.locked || !traps.task) return;
+  const chosen = traps.task.answers[index];
+  if (!chosen) return;
+  traps.locked = true;
+  traps.total++;
+  if (chosen.correct) traps.score++;
+
+  const right = traps.task.answers.findIndex(a => a.correct);
+  $$('#trap-options .quiz-opt').forEach((b, i) => {
+    b.disabled = true;
+    if (i === right) b.classList.add('is-correct');
+    else if (i === index) b.classList.add('is-wrong');
+  });
+
+  const fb = $('#trap-feedback');
+  fb.replaceChildren();
+  fb.className = 'feedback ' + (chosen.correct ? 'ok' : 'err');
+
+  const head = document.createElement('strong');
+  head.textContent = chosen.correct ? t('quiz.right') : t('traps.wrongHead');
+  fb.append(head);
+
+  // Der eigentliche Wert der Aufgabe: benennen, was gedacht wurde.
+  const key = chosen.correct ? 'note.' + traps.task.trap : 'why.' + chosen.mis;
+  const why = t(key);
+  if (why !== key) {
+    const p = document.createElement('p');
+    p.className = 'why';
+    p.textContent = why;
+    fb.append(p);
+  }
+
+  $('#trap-score').textContent = String(traps.score);
+  $('#trap-total').textContent = String(traps.total);
 }
 
 function setQuizMode(mode) {
@@ -1070,8 +1196,10 @@ function setQuizMode(mode) {
   });
   $('#mode-match').hidden = mode !== 'match';
   $('#mode-build').hidden = mode !== 'build';
+  $('#mode-traps').hidden = mode !== 'traps';
   requestAnimationFrame(() => {
     if (mode === 'match') { if (!quiz.answer) newQuizQuestion(); else drawQuiz(); }
+    else if (mode === 'traps') { if (!traps.task) newTrapTask(); else drawTrap(); }
     else { if (!practice.target) newPracticeTask(); else drawPractice(); }
   });
 }
@@ -1313,6 +1441,7 @@ function markProFeatures() {
   lock($('#opt-derivative')?.closest('.chip'), 'calculus');
   lock($('#opt-tangent')?.closest('.chip'), 'calculus');
   lock($('#quiz-modes [data-mode="build"]'), 'practice');
+  lock($('#quiz-modes [data-mode="traps"]'), 'practice');
   lock($('#curve-switch .curve-add'), 'secondCurve');
   $$('[data-feature]').forEach(el => {
     const ok = licence.has(el.dataset.feature);
@@ -1442,6 +1571,7 @@ function applyLanguage() {
   MFE.quiz.relabel();
   if (quiz.answer) renderQuizOptions();
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
+  if (traps.task) newTrapTask();
 }
 
 function applyTheme() {
@@ -1451,7 +1581,7 @@ function applyTheme() {
   renderTableHead();
   invalidateTable();
   render();
-  drawQuiz(); drawPractice(); drawThumbs();
+  drawQuiz(); drawPractice(); drawTrap(); drawThumbs();
 }
 
 function applyDisplay() {
@@ -1461,7 +1591,7 @@ function applyDisplay() {
   requestAnimationFrame(() => {
     measureChrome();
     mainGraph.measure(); render();
-    drawQuiz(); drawPractice(); drawThumbs();
+    drawQuiz(); drawPractice(); drawTrap(); drawThumbs();
   });
 }
 
@@ -1780,7 +1910,7 @@ function bindEvents() {
   $('#btn-copy-table').addEventListener('click', copyTable);
 
   $$('#quiz-modes .seg-btn').forEach(b => b.addEventListener('click', () => {
-    if (b.dataset.mode === 'build' && !licence.has('practice')) { proHint(); return; }
+    if ((b.dataset.mode === 'build' || b.dataset.mode === 'traps') && !licence.has('practice')) { proHint(); return; }
     setQuizMode(b.dataset.mode);
   }));
   $('#btn-next-quiz').addEventListener('click', () => newQuizQuestion(false));
@@ -1793,6 +1923,11 @@ function bindEvents() {
     if (b) answerQuiz(Number(b.dataset.index));
   });
   $('#btn-check').addEventListener('click', checkPractice);
+  $('#btn-next-trap').addEventListener('click', newTrapTask);
+  $('#trap-options').addEventListener('click', (e) => {
+    const b = e.target.closest('.quiz-opt');
+    if (b) answerTrap(Number(b.dataset.index));
+  });
   $('#btn-new-task').addEventListener('click', newPracticeTask);
 
   document.addEventListener('keydown', (e) => {
@@ -1813,7 +1948,7 @@ function bindEvents() {
   const onResize = debounce(() => {
     measureChrome();
     if (mainGraph.measure()) render();
-    drawQuiz(); drawPractice(); drawThumbs();
+    drawQuiz(); drawPractice(); drawTrap(); drawThumbs();
   }, 100);
 
   if ('ResizeObserver' in window) {
@@ -2003,7 +2138,11 @@ function init() {
 /* Nur fuer die Selbsttests nach aussen gereicht. Die App selbst ruft diese
    Funktionen intern auf; ohne diesen Zugang liesse sich das Abmelden des
    Service Workers nicht pruefen. */
-MFE.app = { registerServiceWorker, get version() { return APP_VERSION; } };
+MFE.app = {
+  registerServiceWorker,
+  get version() { return APP_VERSION; },
+  practiceTarget: () => (practice.target ? { ...practice.target } : null)
+};
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();

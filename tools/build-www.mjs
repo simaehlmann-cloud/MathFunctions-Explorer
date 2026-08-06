@@ -40,6 +40,7 @@ const FILES = [
   'js/i18n.js',
   'js/functions.js',
   'js/graph.js',
+  'js/diagnose.js',
   'js/nav.js',
   'js/ui.js',
   'js/qr.js',
