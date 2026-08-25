@@ -28,7 +28,7 @@ const BEAMER_SCALE = 1.55;
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '7.0.0';
+const APP_VERSION = '6.6.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -56,12 +56,23 @@ const state = {
   piAxis: false,
   tangentX: 1,
   traceX: null,
+  secantH: 2,
+  /* Festgehaltene Vergleichskurve: { form, values } oder null. Sie liegt
+     bewusst NICHT in state.curves - sie ist kein zweiter Graph, den man
+     einstellen kann, sondern ein Standbild zum Vergleichen. */
+  frozen: null,
+  /* Spur: die zuletzt eingestellten Zustaende, aelteste zuerst. */
+  trail: [],
   table: { diff: false, quot: false },
   opts: {
     helpers: true, roots: false, yint: false, vertex: false,
-    drag: false, intersections: false, derivative: false, tangent: false, trace: false
+    drag: false, intersections: false, derivative: false, tangent: false, trace: false,
+    secant: false, trail: false, locus: false, showTerm: true
   }
 };
+const TRAIL_MAX = 14;
+const TRAIL_MIN_MS = 70;      // dichter waere nur noch ein Farbverlauf
+let lastTrailAt = 0;
 
 function makeCurve(form) {
   const d = FUNCTIONS[form];
@@ -138,6 +149,8 @@ const saveSession = debounce(() => {
       opts: state.opts,
       table: state.table,
       tangentX: state.tangentX,
+      secantH: state.secantH,
+      frozen: state.frozen,
       inApp: lastScreen === 'app',
       tab: currentTab
     }));
@@ -178,8 +191,24 @@ function loadSession() {
   const opts = { ...state.opts };
   for (const k of Object.keys(opts)) if (typeof s.opts?.[k] === 'boolean') opts[k] = s.opts[k];
   if (!licence.has('drag')) opts.drag = false;
-  if (!licence.has('calculus')) { opts.derivative = false; opts.tangent = false; }
+  if (!licence.has('calculus')) { opts.derivative = false; opts.tangent = false; opts.secant = false; }
   if (curves.length < 2) opts.intersections = false;
+
+  /* Die festgehaltene Kurve kommt aus dem Speicher und ist damit
+     Fremdmaterial wie alles andere auch: Form und Werte werden geprueft, im
+     Zweifel gibt es keine Vergleichskurve statt einer kaputten. */
+  let frozen = null;
+  const fd = FUNCTIONS[s.frozen?.form];
+  if (fd && licence.has('cat.' + fd.category)) {
+    const vals = {};
+    let good = true;
+    for (const prm of fd.params) {
+      const v = Number(s.frozen.values?.[prm.id]);
+      if (!Number.isFinite(v)) { good = false; break; }
+      vals[prm.id] = clamp(v, prm.hardMin ?? -1e9, prm.hardMax ?? 1e9);
+    }
+    if (good) frozen = { form: s.frozen.form, values: vals };
+  }
 
   return {
     curves, opts,
@@ -188,6 +217,8 @@ function loadSession() {
     piAxis: !!s.piAxis,
     table: { diff: !!s.table?.diff, quot: !!s.table?.quot },
     tangentX: Number.isFinite(s.tangentX) ? s.tangentX : 1,
+    secantH: Number.isFinite(s.secantH) ? clamp(s.secantH, -4, 4) : 2,
+    frozen,
     inApp: !!s.inApp,
     tab: ['explorer', 'table', 'quiz'].includes(s.tab) ? s.tab : 'explorer'
   };
@@ -295,7 +326,7 @@ const history_ = { stack: [], index: -1, max: 40, muted: false };
 const snapshot = () => JSON.stringify({
   curves: state.curves, active: state.active, symbols: state.symbols,
   view: state.view, piAxis: state.piAxis, opts: state.opts,
-  tangentX: state.tangentX
+  tangentX: state.tangentX, secantH: state.secantH, frozen: state.frozen
 });
 
 const pushHistory = debounce(() => {
@@ -315,10 +346,16 @@ function applySnapshot(json) {
   try { s = JSON.parse(json); } catch { return; }
   state.curves = s.curves; state.active = s.active; state.symbols = s.symbols;
   state.view = normalizeView(s.view); state.piAxis = s.piAxis;
-  state.opts = s.opts;
+  /* Zusammenfuehren statt ersetzen: ein Schnappschuss aus einer aelteren
+     Fassung kennt neuere Schalter nicht, und ein fehlender Schluessel wuerde
+     sonst als undefined im Zustand landen. */
+  state.opts = { ...state.opts, ...(s.opts && typeof s.opts === 'object' ? s.opts : {}) };
   state.tangentX = Number.isFinite(s.tangentX) ? s.tangentX : 1;
+  state.secantH = Number.isFinite(s.secantH) ? s.secantH : 2;
+  state.frozen = s.frozen ?? null;
   history_.muted = true;
   syncViewInputs(); syncOptionInputs();
+  updateSecantRow(); updateFreezeButton();
   updateExplorer();
   history_.muted = false;
   updateUndoButtons();
@@ -344,7 +381,7 @@ function explorerCtx() {
   return {
     form: cu.form, values: cu.values, bounds: cu.bounds, prefix: '', play: true,
     symbolOf,
-    onChange: () => { render(); syncHash(); },
+    onChange: () => { pushTrail(); render(); syncHash(); },
     onCommit: () => pushHistory()
   };
 }
@@ -366,8 +403,49 @@ function scene() {
     opts: state.opts,
     tangentX: state.tangentX,
     traceX: state.traceX,
+    // Sekante haengt am selben Punkt wie die Tangente: der Punkt auf der
+    // Kurve gehoert dem Nutzer, nicht dem Werkzeug.
+    secantX: state.tangentX,
+    secantH: state.secantH,
+    trail: state.opts.trail ? state.trail : null,
+    locus: state.opts.locus,
+    ghost: state.frozen ? { form: state.frozen.form, values: state.frozen.values } : null,
+    ghostLabel: state.frozen ? t('btn.freeze') : '',
     scale: sceneScale()
   };
+}
+
+/* --------------------------------------------------------------------------
+   Spur
+   Nur beim Ziehen mitschreiben, zeitlich ausgeduennt und gedeckelt. Sonst
+   waeren es hundert Kurven pro Reglerfahrt - und die Zeichenzeit stiege
+   linear mit.
+   -------------------------------------------------------------------------- */
+function pushTrail() {
+  if (!state.opts.trail) return;
+  const now = performance.now();
+  if (now - lastTrailAt < TRAIL_MIN_MS) return;
+  lastTrailAt = now;
+  const cu = curve();
+  const last = state.trail[state.trail.length - 1];
+  if (last && last.form === cu.form
+      && FUNCTIONS[cu.form].params.every(p => last.values[p.id] === cu.values[p.id])) return;
+  state.trail.push({ form: cu.form, values: { ...cu.values }, color: CURVE_COLORS[state.active] });
+  if (state.trail.length > TRAIL_MAX) state.trail.shift();
+  updateTrailButton();
+}
+
+function clearTrail({ quiet = false } = {}) {
+  if (!state.trail.length) return;
+  state.trail = [];
+  updateTrailButton();
+  render();
+  if (!quiet) toast(t('msg.trailCleared'));
+}
+
+function updateTrailButton() {
+  const b = $('#btn-clear-trail');
+  if (b) b.hidden = !state.trail.length;
 }
 
 function render() {
@@ -379,8 +457,69 @@ function render() {
     const sc = scene();
     drawScene(mainGraph, sc);
     updateReadout(sc);
+    syncEquationValues();
+    updateValueStrip();
     describeGraph();
   });
+}
+
+/** Der Term mit Zahlen muss dem Regler folgen, nicht dem Loslassen - sonst
+ *  hinkt die Zahl beim Ziehen hinterher. Deshalb hier im Zeichenpfad und
+ *  nicht in updateExplorer(). */
+function syncEquationValues() {
+  for (const el of $$('#equations [data-value]')) {
+    const i = Number(el.dataset.value);
+    if (!state.curves[i]) continue;
+    el.hidden = !state.opts.showTerm;
+    if (state.opts.showTerm) renderEquationValue(el, i);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Wertestreifen
+   Am Telefon im Querformat bleiben nach Kopf- und Reiterleiste rund 260 px -
+   fuer die Wertetabelle nebeneinander zu wenig. Drei bis fuenf Werte rund um
+   den verfolgten Punkt passen dagegen immer und leisten beim Ablesen
+   dasselbe.
+   -------------------------------------------------------------------------- */
+const STRIP_STEPS = [-2, -1, 0, 1, 2];
+
+function updateValueStrip() {
+  const box = $('#value-strip');
+  if (!box) return;
+  const x0 = state.traceX;
+  if (!state.opts.trace || !Number.isFinite(x0)) { box.hidden = true; box.replaceChildren(); return; }
+
+  const d = def();
+  const step = stripStep();
+  const frag = document.createDocumentFragment();
+  for (const k of STRIP_STEPS) {
+    const x = Math.round((x0 + k * step) * 1e6) / 1e6;
+    const y = d.f(x, values());
+    const cell = document.createElement('div');
+    cell.className = 'vs-cell' + (k === 0 ? ' is-current' : '');
+    const sx = document.createElement('span');
+    sx.className = 'vs-x';
+    sx.textContent = `x = ${fmt(x, 2)}`;
+    const sy = document.createElement('span');
+    sy.className = 'vs-y';
+    sy.textContent = Number.isFinite(y) ? `${curveName(state.active)} = ${fmt(y, 2)}` : t('msg.undefined');
+    cell.append(sx, sy);
+    frag.append(cell);
+  }
+  box.replaceChildren(frag);
+  box.hidden = false;
+}
+
+/** Schrittweite des Streifens: die der Wertetabelle, wenn sie brauchbar ist,
+ *  sonst eine runde Zahl aus dem sichtbaren Bereich. */
+function stripStep() {
+  const fromTable = parseLoose($('#tbl-step')?.value, NaN);
+  if (Number.isFinite(fromTable) && fromTable > 0) {
+    const span = state.view.xMax - state.view.xMin;
+    if (fromTable <= span / 2) return fromTable;
+  }
+  return MFE.graph.niceStep(state.view.xMax - state.view.xMin, 10);
 }
 
 /** Der Ablesetext unter dem Graphen. Reihenfolge nach Dringlichkeit: was die
@@ -390,6 +529,14 @@ function updateReadout(sc) {
   if (sc.traceInfo) parts.push(`(${mfmt(sc.traceInfo.x)} | ${mfmt(sc.traceInfo.y)})`);
   if (sc.tangentInfo) {
     parts.push(`${t('poi.slope')} ${mfmt(sc.tangentInfo.m)} ${t('poi.at')} x = ${mfmt(sc.tangentInfo.x)}`);
+  }
+  /* Der Differenzenquotient ausgeschrieben: genau die Zeile, die im Heft
+     steht, mit den Zahlen von gerade eben. */
+  if (sc.secantInfo) {
+    const s = sc.secantInfo;
+    parts.push(s.h === 0
+      ? `${t('poi.slope')} ${mfmt(s.m)}`
+      : `${t('poi.diffQuot')} ${mfmt(s.y1 - s.y0)} / ${mfmt(s.h)} = ${mfmt(s.m)}`);
   }
   if (state.opts.intersections && state.curves.length === 2) {
     parts.push(sc.intersections.length
@@ -491,6 +638,19 @@ function updateOptionAvailability() {
   $('#opt-vertex').closest('.chip').hidden = !def().vertex;
   $('#opt-drag').closest('.chip').hidden = !def().handles;
   $('#opt-intersections').closest('.chip').hidden = state.curves.length < 2;
+  // Ortskurve gibt es nur, wo ein Scheitelpunkt zu wandern hat.
+  $('#opt-locus').closest('.chip').hidden = !def().vertex;
+  updateSecantRow();
+  updateFreezeButton();
+  updateTrailButton();
+}
+
+/** Die zweite Zeile: derselbe Term, aber mit den eingestellten Zahlen.
+ *  Der Uebergang Symbol -> Zahl ist genau die Stelle, an der es im Unterricht
+ *  haengt; beides nebeneinander macht ihn sichtbar. */
+function renderEquationValue(container, i) {
+  const cu = state.curves[i];
+  container.textContent = `${curveName(i)}(x) = ${FUNCTIONS[cu.form].rhs(cu.values)}`;
 }
 
 function updateExplorer() {
@@ -504,6 +664,15 @@ function updateExplorer() {
     line.dataset.curve = String(i);
     renderEquation(line, i, { interactive: i === state.active });
     eqBox.append(line);
+
+    const val = document.createElement('div');
+    val.className = 'equation-value' + (i === state.active ? ' is-active' : '');
+    val.dataset.value = String(i);
+    // Ausgeschaltet bleibt die Struktur f(x) = m\u00b7x + b stehen und nur die
+    // Zahlen verschwinden: genau der Zustand fuer "Ratet die Werte".
+    val.hidden = !state.opts.showTerm;
+    renderEquationValue(val, i);
+    eqBox.append(val);
   });
 
   renderSliderGroup($('#parameters-container'), explorerCtx());
@@ -580,20 +749,32 @@ const canvasPoint = (e) => {
   return { px: e.clientX - r.left, py: e.clientY - r.top };
 };
 
+/**
+ * Naechstliegenden Ziehpunkt suchen, nicht den ersten getroffenen.
+ * FEHLER bis v6.5: die Schleife brach beim ersten Treffer ab. Lagen zwei
+ * Punkte dicht beieinander - bei der Geraden ist das der Regelfall, sobald
+ * man herauszoomt -, bekam man immer denselben zu fassen, egal wo man
+ * hintippte. Der zweite Teil der Loesung steht in functions.js: die
+ * Ziehpunkte halten jetzt einen Mindestabstand in Bildpunkten.
+ */
 function hitHandle(px, py) {
   const d = def();
   if (!d.handles) return null;
-  const list = d.handles(values());
+  const list = d.handles(values(), mainGraph.unitPerPx);
   const tol = 24 * (state.display === 'beamer' ? 1.3 : 1);
+  let best = null, bestD = tol * tol;
   for (let i = 0; i < list.length; i++) {
     const dx = mainGraph.x2px(list[i].x) - px, dy = mainGraph.y2px(list[i].y) - py;
-    if (dx * dx + dy * dy <= tol * tol) return i;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= bestD) { bestD = d2; best = i; }
   }
-  return null;
+  return best;
 }
 
-function hitTangent(px) {
-  if (!state.opts.tangent || !Number.isFinite(state.tangentX)) return false;
+/** Der Punkt auf der Kurve traegt Tangente UND Sekante. */
+function hitAnchor(px) {
+  if (!(state.opts.tangent || state.opts.secant)) return false;
+  if (!Number.isFinite(state.tangentX)) return false;
   return Math.abs(mainGraph.x2px(state.tangentX) - px) <= 26;
 }
 
@@ -628,7 +809,7 @@ function onPointerDown(e) {
   if (handle !== null) {
     gesture = { mode: 'handle', index: handle };
     stopPlay();
-  } else if (hitTangent(pt.px)) {
+  } else if (hitAnchor(pt.px)) {
     gesture = { mode: 'tangent' };
   } else if (state.opts.trace) {
     gesture = { mode: 'trace' };
@@ -664,7 +845,9 @@ function onPointerMove(e) {
   const pt = pointers.get(e.pointerId);
   switch (gesture?.mode) {
     case 'handle': {
-      const list = def().handles?.(values());
+      // Denselben Abstand wie beim Treffertest verwenden, sonst zeigt der
+      // Punkt woanders hin, als er gezeichnet wurde.
+      const list = def().handles?.(values(), mainGraph.unitPerPx);
       const hd = list?.[gesture.index];
       if (!hd) return;
       const patch = hd.set(mainGraph.px2x(pt.px), mainGraph.py2y(pt.py));
@@ -719,7 +902,11 @@ function onPointerUp(e) {
   gesture = null;
   mainGraph.canvas.classList.remove('is-dragging');
 
-  if (mode === 'trace') { state.traceX = null; render(); return; }
+  /* Der verfolgte Punkt bleibt jetzt stehen. Vorher verschwand er beim
+     Loslassen - man konnte den abgelesenen Wert also nie in Ruhe ansehen,
+     geschweige denn mit der Wertetabelle vergleichen. Ausgeschaltet wird das
+     Verfolgen ueber seinen Schalter. */
+  if (mode === 'trace') { markTableRow(); render(); syncHash(); return; }
   if (mode === 'pan') { syncHash(); pushHistory(); return; }
   if (mode === 'handle' || mode === 'tangent') { syncHash(); pushHistory(); }
 }
@@ -841,6 +1028,81 @@ async function playTransformation() {
 }
 
 /* ==========================================================================
+   8b · KURVE FESTHALTEN UND SEKANTE
+   ========================================================================== */
+/** Standbild der aktuellen Kurve. Der Vergleich "vorher/nachher" ist beim
+ *  Entdecken wirksamer als zwei frei einstellbare Kurven, weil die Referenz
+ *  sich nicht mitbewegt. */
+function toggleFreeze() {
+  if (state.frozen) {
+    state.frozen = null;
+    toast(t('msg.unfrozen'));
+  } else {
+    const cu = curve();
+    state.frozen = { form: cu.form, values: { ...cu.values } };
+    toast(t('msg.frozen'));
+  }
+  updateFreezeButton();
+  render();
+  pushHistory();
+}
+
+function updateFreezeButton() {
+  const b = $('#btn-freeze');
+  if (!b) return;
+  b.textContent = t(state.frozen ? 'btn.unfreeze' : 'btn.freeze');
+  b.setAttribute('aria-pressed', String(!!state.frozen));
+}
+
+function updateSecantRow() {
+  const row = $('#secant-row');
+  if (row) row.hidden = !state.opts.secant;
+  const out = $('#secant-value');
+  if (out) out.textContent = `h = ${mfmt(state.secantH)}`;
+  const slider = $('#secant-h');
+  if (slider && document.activeElement !== slider) slider.value = String(state.secantH);
+}
+
+/** Setzt die Stelle der Sekante in den sichtbaren Bereich, falls sie
+ *  ausserhalb liegt - sonst schaltet man sie ein und sieht nichts. */
+function ensureAnchorVisible() {
+  const v = state.view;
+  if (!Number.isFinite(state.tangentX) || state.tangentX < v.xMin || state.tangentX > v.xMax) {
+    state.tangentX = (v.xMin + v.xMax) / 2;
+  }
+}
+
+let hAnim = null;
+function stopHAnim() {
+  if (!hAnim) return;
+  cancelAnimationFrame(hAnim.raf);
+  hAnim = null;
+}
+
+/** h gegen 0 laufen lassen: der Standardweg vom Differenzenquotienten zur
+ *  Ableitung. Am Ende steht die Tangente, nicht die Sekante. */
+function playHToZero() {
+  if (!state.opts.secant) return;
+  stopHAnim();
+  const from = state.secantH;
+  if (Math.abs(from) < 1e-6) return;
+  const dur = REDUCED_MOTION ? 400 : 2200;
+  const t0 = performance.now();
+  const step = (now) => {
+    if (!hAnim) return;
+    const k = clamp((now - t0) / dur, 0, 1);
+    // quadratisch auslaufen: nah bei 0 wird es langsam, dort passiert das
+    // Interessante.
+    state.secantH = Math.round(from * (1 - k) ** 2 * 1000) / 1000;
+    updateSecantRow();
+    render();
+    if (k < 1) hAnim.raf = requestAnimationFrame(step);
+    else { state.secantH = 0; updateSecantRow(); render(); hAnim = null; pushHistory(); }
+  };
+  hAnim = { raf: requestAnimationFrame(step) };
+}
+
+/* ==========================================================================
    9 · WERTETABELLE
    ========================================================================== */
 const MAX_ROWS = 500;
@@ -918,6 +1180,9 @@ function generateTable() {
 
   for (let i = 0; i < count; i++) {
     const tr = document.createElement('tr');
+    // Die Stelle bleibt an der Zeile haengen: ein Tippen setzt damit den
+    // verfolgten Punkt im Graphen, ohne die Zahl zurueckparsen zu muessen.
+    tr.dataset.x = String(xs[i]);
     tr.append(cell(fmt(xs[i], 3)));
     state.curves.forEach((cu, c) => {
       const y = ys[c][i];
@@ -936,6 +1201,46 @@ function generateTable() {
     frag.append(tr);
   }
   $('#values-table tbody').replaceChildren(frag);
+  markTableRow();
+}
+
+/* --------------------------------------------------------------------------
+   Tabelle und Graph verkoppeln
+   Der Darstellungswechsel ist der Kern des Faches - im Explorer lagen beide
+   Darstellungen bisher nebeneinander, ohne sich zu kennen.
+   -------------------------------------------------------------------------- */
+function markTableRow() {
+  const rows = $$('#values-table tbody tr');
+  if (!rows.length) return;
+  let best = null, bestD = Infinity;
+  if (Number.isFinite(state.traceX)) {
+    for (const tr of rows) {
+      const x = Number(tr.dataset.x);
+      if (!Number.isFinite(x)) continue;
+      const d = Math.abs(x - state.traceX);
+      if (d < bestD) { bestD = d; best = tr; }
+    }
+  }
+  /* Nur markieren, wenn die Zeile den Punkt auch wirklich trifft. Sonst
+     leuchtete bei x = 100 die letzte Zeile der Tabelle auf und behauptete
+     eine Zusammengehoerigkeit, die es nicht gibt. */
+  const step = Math.abs(Number(rows[1]?.dataset.x) - Number(rows[0]?.dataset.x)) || 1;
+  const hit = best && bestD <= step / 2 + 1e-9;
+  for (const tr of rows) tr.classList.toggle('is-marked', hit && tr === best);
+}
+
+/** Tippen auf eine Zeile setzt den verfolgten Punkt. Das Verfolgen wird dabei
+ *  eingeschaltet - sonst passierte auf den ersten Blick gar nichts. */
+function traceFromRow(tr) {
+  const x = Number(tr?.dataset.x);
+  if (!Number.isFinite(x)) return;
+  state.traceX = x;
+  if (!state.opts.trace) {
+    state.opts.trace = true;
+    syncOptionInputs();
+  }
+  markTableRow();
+  render();
 }
 
 async function copyTable() {
@@ -950,7 +1255,8 @@ async function copyTable() {
 /* ==========================================================================
    10 · UEBEN - Modus "Zuordnen"
    ========================================================================== */
-const quiz = { answer: null, options: [], score: 0, total: 0, locked: false, form: 'linear' };
+const quiz = { answer: null, options: [], score: 0, total: 0, locked: false,
+               form: 'linear', attempt: 0, wrong: null };
 
 function quizView(form) {
   return { ...state.view, piAxis: FUNCTIONS[form].piAxis || state.piAxis };
@@ -960,6 +1266,8 @@ function newQuizQuestion(fromExplorer = false) {
   quiz.form = curve(0).form;
   quiz.answer = fromExplorer ? { ...values(0) } : MFE.quiz.randomValues(quiz.form);
   quiz.locked = false;
+  quiz.attempt = 0;
+  quiz.wrong = null;
   quiz.options = [quiz.answer, ...MFE.quiz.makeDistractors(quiz.form, quiz.answer, 3)]
     .sort(() => Math.random() - 0.5);
   const fb = $('#quiz-feedback'); fb.textContent = ''; fb.className = 'feedback';
@@ -971,10 +1279,7 @@ function renderQuizOptions() {
   const box = $('#quiz-options');
   box.replaceChildren();
   quiz.options.forEach((v, i) => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'quiz-opt'; b.dataset.index = String(i);
-    b.textContent = `${String.fromCharCode(65 + i)})  ${MFE.quiz.eqText(quiz.form, v)}`;
-    box.append(b);
+    box.append(MFE.quiz.optionButton(i, MFE.quiz.eqText(quiz.form, v)));
   });
 }
 
@@ -983,31 +1288,70 @@ const BLANK_OPTS = { helpers: false, roots: false, yint: false, vertex: false,
 
 function drawQuiz() {
   if (!quiz.answer || !quizGraph || !quizGraph.measure()) return;
-  drawScene(quizGraph, {
+  const sc = {
     curves: [{ form: quiz.form, values: quiz.answer, color: '--graph' }],
     activeIndex: 0,
     view: quizView(quiz.form),
     opts: BLANK_OPTS,
     scale: sceneScale()
-  });
+  };
+  // Nach einer falschen Antwort die gewaehlte Kurve dazu: der Fehler wird
+  // sichtbar, statt nur benannt zu werden.
+  if (quiz.wrong) {
+    sc.ghost = { form: quiz.form, values: quiz.wrong };
+    sc.ghostLabel = t('quiz.yourAnswer');
+  }
+  drawScene(quizGraph, sc);
 }
 
+/**
+ * Antwort im Modus "Zuordnen".
+ * Der erste Fehlversuch schliesst die Aufgabe nicht ab: die falsche Kachel
+ * wird gesperrt, der erkannte Fehler benannt, die Kurve dazu gezeichnet. Wer
+ * es dann findet, bekommt einen halben Punkt.
+ */
 function answerQuiz(index) {
   if (quiz.locked) return;
-  quiz.locked = true; quiz.total++;
   const correctIndex = quiz.options.indexOf(quiz.answer);
   const ok = index === correctIndex;
-  if (ok) quiz.score++;
-  $$('#quiz-options .quiz-opt').forEach((b, i) => {
+  const fb = $('#quiz-feedback');
+  const tiles = $$('#quiz-options .quiz-opt');
+
+  if (!ok && quiz.attempt === 0 && tiles.length > 2) {
+    quiz.attempt = 1;
+    quiz.wrong = quiz.options[index];
+    const tile = tiles[index];
+    if (tile) { tile.classList.add('is-wrong', 'is-tried'); tile.disabled = true; }
+    fb.className = 'feedback err';
+    fb.textContent = `${t('quiz.retry')} ${MFE.quiz.diagnose(quiz.form, quiz.options[index], quiz.answer)} ${t('quiz.showWrong')}`.trim();
+    drawQuiz();
+    return;
+  }
+
+  quiz.locked = true;
+  quiz.total++;
+  const gained = ok ? (quiz.attempt === 0 ? 1 : 0.5) : 0;
+  quiz.score += gained;
+  MFE.quiz.noteResult(quiz.form, ok ? (quiz.attempt === 0 ? true : 'half') : false);
+
+  tiles.forEach((b, i) => {
     b.disabled = true;
     if (i === correctIndex) b.classList.add('is-correct');
     else if (i === index) b.classList.add('is-wrong');
   });
-  const fb = $('#quiz-feedback');
+
+  if (!ok) { quiz.wrong = quiz.options[index]; drawQuiz(); }
+
   fb.className = 'feedback ' + (ok ? 'ok' : 'err');
-  fb.textContent = ok ? t('quiz.right') : `${t('quiz.wrong')} ${MFE.quiz.eqText(quiz.form, quiz.answer)}`;
-  $('#quiz-score').textContent = String(quiz.score);
+  if (ok) {
+    fb.textContent = quiz.attempt === 0 ? t('quiz.right') : t('quiz.halfPoint');
+  } else {
+    const hint = MFE.quiz.diagnose(quiz.form, quiz.options[index], quiz.answer);
+    fb.textContent = `${t('quiz.wrong')} ${MFE.quiz.eqText(quiz.form, quiz.answer)} ${hint}`.trim();
+  }
+  $('#quiz-score').textContent = fmt(quiz.score, 1);
   $('#quiz-total').textContent = String(quiz.total);
+  renderProgress();
 }
 
 /* ==========================================================================
@@ -1041,154 +1385,294 @@ function drawPractice() {
   });
 }
 
-/**
- * Auswertung im Nachbau-Modus.
- * Frueher stand hier nur "c zu niedrig". Das sagt, DASS etwas falsch ist,
- * aber nicht, was gedacht wurde. MFE.diagnose erkennt Vorzeichenfehler,
- * vertauschte Parameter, verdoppelte oder halbierte Werte und die
- * Verschieberichtung - und genau das wird hier in Worte gefasst.
- */
 function checkPractice() {
   if (!practice.target) return;
-  const res = MFE.diagnose.analyseBuild(practice.form, practice.target, practice.ctx.values);
+  const d = FUNCTIONS[practice.form];
+  const wrong = [];
+  let ok = 0;
+  for (const p of d.params) {
+    const diff = practice.ctx.values[p.id] - practice.target[p.id];
+    const tol = MFE.math.tolerance(practice.target[p.id], p.step);
+    if (Math.abs(diff) <= tol) ok++;
+    else wrong.push(`${symbolOf(p.id, practice.form)} ${t(diff > 0 ? 'build.tooHigh' : 'build.tooLow')}`);
+  }
   const fb = $('#practice-feedback');
-  fb.replaceChildren();
-
-  if (res.solved) {
+  if (!wrong.length) {
     fb.className = 'feedback ok';
     fb.textContent = `${t('build.done')} ${MFE.quiz.eqText(practice.form, practice.target)}`;
-    return;
+  } else {
+    fb.className = 'feedback err';
+    fb.textContent = `${t('build.hitCount', { ok, all: d.params.length })} ${t('build.close')} ${wrong.join(', ')}`;
   }
-
-  fb.className = 'feedback err';
-  const head = document.createElement('strong');
-  head.textContent = t('build.hitCount', { ok: res.hits, all: res.total });
-  fb.append(head);
-
-  const list = document.createElement('ul');
-  list.className = 'finding-list';
-  for (const f of res.findings) {
-    const li = document.createElement('li');
-    li.textContent = findingText(practice.form, f);
-    // Ein rein numerischer Befund, der knapp daneben liegt, ist ein anderer
-    // Hinweis als ein Denkfehler - das soll man auch sehen.
-    li.className = f.close ? 'is-close' : (f.kind === 'tooHigh' || f.kind === 'tooLow' ? '' : 'is-concept');
-    list.append(li);
-  }
-  fb.append(list);
-}
-
-/** Setzt einen Befund der Fehleranalyse in einen Satz um. */
-function findingText(form, f) {
-  const sym = (id) => symbolOf(id, form);
-  const vars = { ...f.vars, a: sym(f.ids[0]), b: f.ids[1] ? sym(f.ids[1]) : '' };
-  return t('find.' + f.kind, vars);
 }
 
 /* ==========================================================================
-   11b · UEBEN - Modus "Typische Fallen"
-   Die falschen Antworten sind nicht zufaellig, sondern entsprechen jeweils
-   einem bekannten Denkfehler (siehe js/diagnose.js). Wer eine davon waehlt,
-   bekommt die Erklaerung dazu - das ist der Punkt, an dem sich diese App von
-   einem Funktionenplotter unterscheidet.
+   11b · UEBEN - Modus "Wettkampf"
+   --------------------------------------------------------------------------
+   Bewusst NUR mit Zuordnungsaufgaben. Zeitdruck belohnt schnelles Erkennen -
+   bei Aufgaben, die Nachdenken verlangen (Nachbauen, Wertetabelle deuten),
+   belohnt er Raten und bestraft genau das Ueberlegen, um das es geht. Die
+   beiden ruhigen Modi bleiben deshalb unberuehrt.
+
+   Alles bleibt auf dem Geraet: keine Rangliste auf einem Server, keine Namen,
+   kein Konto. Weitergegeben wird hoechstens ein Code, den die Schuelerin
+   selbst zeigt.
    ========================================================================== */
-const traps = { task: null, locked: false, score: 0, total: 0 };
-let trapGraph = null;
+const RACE_TOTAL = 10;
+const RACE_MS = 20000;          // Zeit je Aufgabe
+const RACE_BASE = 100;          // Grundpunkte fuer eine richtige Antwort
+const RACE_BONUS = 100;         // zusaetzlich, wenn sofort geantwortet wird
+const RACE_STREAK_STEP = 25;    // je Folgerichtiger, gedeckelt
+const RACE_STREAK_MAX = 100;
 
-/** Sucht eine Funktionsklasse, zu der es ueberhaupt Fallen gibt. */
-function trapForm() {
-  const current = curve(0).form;
-  if (MFE.diagnose.forForm(current).length) return current;
-  const usable = Object.keys(FUNCTIONS).filter(f =>
-    MFE.diagnose.forForm(f).length && licence.has('cat.' + FUNCTIONS[f].category));
-  return usable[0] ?? null;
+/* run: Kennnummer des Durchgangs. Ohne sie konnte ein setTimeout aus einem
+   abgebrochenen Wettkampf im naechsten weiterzaehlen - man startete neu und
+   sprang sofort zur zweiten Aufgabe. */
+const race = {
+  on: false, run: 0, index: 0, points: 0, streak: 0, ok: 0,
+  form: 'linear', answer: null, options: [], locked: false,
+  endsAt: 0, raf: 0, graph: null
+};
+
+function raceForms() {
+  const cat = FUNCTIONS[curve(0).form].category;
+  return (CATEGORY_FORMS[cat] ?? ['linear']).filter(f => FUNCTIONS[f] && licence.has('cat.' + FUNCTIONS[f].category));
 }
 
-function newTrapTask() {
-  const form = trapForm();
-  if (!form) { $('#trap-prompt').textContent = t('traps.none'); return; }
-
-  // Nicht jede Wertekombination laesst eine Falle zuschnappen - bei b = 0
-  // gibt es keine Verwechslung von b und c. Also wuerfeln, bis es passt.
-  let task = null;
-  for (let i = 0; i < 60 && !task; i++) {
-    task = MFE.diagnose.makeTrap(form, MFE.quiz.randomValues(form));
+function stopRace({ keepSummary = true } = {}) {
+  if (race.raf) cancelAnimationFrame(race.raf);
+  race.raf = 0;
+  race.on = false;
+  const run = $('#race-run');
+  if (run) run.hidden = true;
+  if (!keepSummary) {
+    const sum = $('#race-summary');
+    if (sum) sum.hidden = true;
   }
-  if (!task) { $('#trap-prompt').textContent = t('traps.none'); return; }
-
-  traps.task = task;
-  traps.locked = false;
-  $('#trap-prompt').textContent = t(task.promptKey, task.promptVars);
-  const fb = $('#trap-feedback');
-  fb.replaceChildren();
-  fb.className = 'feedback';
-
-  const box = $('#trap-options');
-  box.replaceChildren();
-  task.answers.forEach((a, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'quiz-opt';
-    b.dataset.index = String(i);
-    // raw: die Beschriftung ist selbst ein Uebersetzungsschluessel
-    b.textContent = `${String.fromCharCode(65 + i)})  ${a.raw ? t(a.label) : a.label}`;
-    box.append(b);
-  });
-  drawTrap();
+  const start = $('#race-start-box');
+  if (start) start.hidden = false;
+  renderRaceBest();
 }
 
-function drawTrap() {
-  const cv = $('#trap-canvas');
-  if (!traps.task || !cv) return;
-  if (!trapGraph || trapGraph.canvas !== cv) trapGraph = new Graph(cv);
-  if (!trapGraph.measure()) return;
-  drawScene(trapGraph, {
-    curves: [{ form: traps.task.form, values: traps.task.values, color: '--graph' }],
+function startRace() {
+  stopRace({ keepSummary: false });
+  race.run++;
+  race.on = true;
+  race.index = 0; race.points = 0; race.streak = 0; race.ok = 0;
+  $('#race-start-box').hidden = true;
+  $('#race-summary').hidden = true;
+  $('#race-run').hidden = false;
+  raceQuestion();
+}
+
+function raceQuestion() {
+  if (!race.on) return;
+  const forms = raceForms();
+  race.form = forms[Math.floor(Math.random() * forms.length)] ?? 'linear';
+  race.answer = MFE.quiz.randomValues(race.form);
+  race.locked = false;
+  race.options = [race.answer, ...MFE.quiz.makeDistractors(race.form, race.answer, 3)]
+    .sort(() => Math.random() - 0.5);
+
+  $('#race-progress').textContent = t('race.question', { i: race.index + 1, n: RACE_TOTAL });
+  $('#race-streak').textContent = String(race.streak);
+  $('#race-points').textContent = String(race.points);
+  const fb = $('#race-feedback'); fb.textContent = ''; fb.className = 'feedback';
+
+  const box = $('#race-options');
+  box.replaceChildren();
+  race.options.forEach((v, i) => {
+    box.append(MFE.quiz.optionButton(i, MFE.quiz.eqText(race.form, v)));
+  });
+
+  race.endsAt = performance.now() + RACE_MS;
+  drawRace();
+  raceTick();
+}
+
+function drawRace() {
+  const cv = $('#race-canvas');
+  if (!cv || !race.answer) return;
+  if (!race.graph || race.graph.canvas !== cv) race.graph = new Graph(cv);
+  if (!race.graph.measure()) return;
+  drawScene(race.graph, {
+    curves: [{ form: race.form, values: race.answer, color: '--graph' }],
     activeIndex: 0,
-    view: quizView(traps.task.form),
+    view: MFE.quiz.viewFor(race.form),
     opts: BLANK_OPTS,
     scale: sceneScale()
   });
 }
 
-function answerTrap(index) {
-  if (traps.locked || !traps.task) return;
-  const chosen = traps.task.answers[index];
-  if (!chosen) return;
-  traps.locked = true;
-  traps.total++;
-  if (chosen.correct) traps.score++;
+function raceTick() {
+  if (!race.on) return;
+  const left = race.endsAt - performance.now();
+  const fill = $('#race-clock-fill');
+  if (fill) {
+    const share = clamp(left / RACE_MS, 0, 1);
+    fill.style.width = (share * 100).toFixed(1) + '%';
+    fill.classList.toggle('is-low', share < 0.25);
+  }
+  if (left <= 0 && !race.locked) { raceTimeUp(); return; }
+  race.raf = requestAnimationFrame(raceTick);
+}
 
-  const right = traps.task.answers.findIndex(a => a.correct);
-  $$('#trap-options .quiz-opt').forEach((b, i) => {
+function raceTimeUp() {
+  race.locked = true;
+  race.streak = 0;
+  const correctIndex = race.options.indexOf(race.answer);
+  $$('#race-options .quiz-opt').forEach((b, i) => {
     b.disabled = true;
-    if (i === right) b.classList.add('is-correct');
+    if (i === correctIndex) b.classList.add('is-correct');
+  });
+  const fb = $('#race-feedback');
+  fb.className = 'feedback err';
+  fb.textContent = `${t('race.timeUp')} ${MFE.quiz.eqText(race.form, race.answer)}`;
+  MFE.quiz.noteResult(race.form, false);
+  raceAdvance();
+}
+
+function raceAnswer(index) {
+  if (!race.on || race.locked) return;
+  race.locked = true;
+  if (race.raf) { cancelAnimationFrame(race.raf); race.raf = 0; }
+
+  const left = Math.max(0, race.endsAt - performance.now());
+  const correctIndex = race.options.indexOf(race.answer);
+  const ok = index === correctIndex;
+
+  $$('#race-options .quiz-opt').forEach((b, i) => {
+    b.disabled = true;
+    if (i === correctIndex) b.classList.add('is-correct');
     else if (i === index) b.classList.add('is-wrong');
   });
 
-  const fb = $('#trap-feedback');
-  fb.replaceChildren();
-  fb.className = 'feedback ' + (chosen.correct ? 'ok' : 'err');
-
-  const head = document.createElement('strong');
-  head.textContent = chosen.correct ? t('quiz.right') : t('traps.wrongHead');
-  fb.append(head);
-
-  // Der eigentliche Wert der Aufgabe: benennen, was gedacht wurde.
-  const key = chosen.correct ? 'note.' + traps.task.trap : 'why.' + chosen.mis;
-  const why = t(key);
-  if (why !== key) {
-    const p = document.createElement('p');
-    p.className = 'why';
-    p.textContent = why;
-    fb.append(p);
+  const fb = $('#race-feedback');
+  if (ok) {
+    const bonus = Math.round((left / RACE_MS) * RACE_BONUS);
+    const streakBonus = Math.min(race.streak * RACE_STREAK_STEP, RACE_STREAK_MAX);
+    const gained = RACE_BASE + bonus + streakBonus;
+    race.points += gained;
+    race.streak++;
+    race.ok++;
+    fb.className = 'feedback ok';
+    fb.textContent = t('race.bonus', { p: gained, b: bonus + streakBonus });
+  } else {
+    race.streak = 0;
+    fb.className = 'feedback err';
+    // Auch im Wettkampf wird der Fehler benannt - er kostet keine Zeit mehr,
+    // die Aufgabe ist ja vorbei.
+    const hint = MFE.quiz.diagnose(race.form, race.options[index], race.answer);
+    fb.textContent = `${t('race.none')} ${MFE.quiz.eqText(race.form, race.answer)} ${hint}`.trim();
   }
+  $('#race-points').textContent = String(race.points);
+  $('#race-streak').textContent = String(race.streak);
+  MFE.quiz.noteResult(race.form, ok);
+  raceAdvance();
+}
 
-  $('#trap-score').textContent = String(traps.score);
-  $('#trap-total').textContent = String(traps.total);
+/** Kurze Pause, damit die Rueckmeldung lesbar ist, dann weiter. */
+function raceAdvance() {
+  const wait = REDUCED_MOTION ? 1800 : 1400;
+  const run = race.run;
+  setTimeout(() => {
+    if (!race.on || race.run !== run) return;
+    race.index++;
+    if (race.index >= RACE_TOTAL) endRace();
+    else raceQuestion();
+  }, wait);
+}
+
+function endRace() {
+  const cat = FUNCTIONS[race.form]?.category ?? 'linear';
+  const points = race.points, ok = race.ok;
+  const isBest = MFE.quiz.noteBest(cat, points);
+  race.on = false;
+  if (race.raf) { cancelAnimationFrame(race.raf); race.raf = 0; }
+
+  $('#race-run').hidden = true;
+  $('#race-summary').hidden = false;
+  $('#race-start-box').hidden = true;
+  $('#race-result').textContent = t('race.result', { p: points, ok, n: RACE_TOTAL });
+  $('#race-best-note').textContent = isBest
+    ? t('race.newBest')
+    : t('race.best', { p: MFE.quiz.bestOf(cat) });
+  renderProgress();
+}
+
+/* --------------------------------------------------------------------------
+   Ergebniscode
+   Fuer eine Rangliste im Klassenraum braucht es keinen Server: die Schuelerin
+   zeigt einen kurzen Code, die Lehrkraft liest ihn ab oder scannt ihn.
+   Die Pruefziffer faengt Vertipper ab - sie ist KEIN Faelschungsschutz, und
+   das soll sie auch nicht sein.
+   -------------------------------------------------------------------------- */
+function raceCode() {
+  const p = clamp(Math.round(race.points), 0, 99999);
+  const ok = clamp(race.ok, 0, 99);
+  const body = (p * 100 + ok).toString(36).toUpperCase().padStart(5, '0');
+  let sum = 0;
+  for (const ch of body) sum = (sum * 31 + ch.charCodeAt(0)) % 36;
+  const check = sum.toString(36).toUpperCase();
+  return `${body}-${check}`;
+}
+
+function raceResultText() {
+  return `${t('race.result', { p: race.points, ok: race.ok, n: RACE_TOTAL })}  [${raceCode()}]`;
+}
+
+function showRaceCode() {
+  const dlg = $('#race-dialog');
+  if (!dlg?.showModal) { toast(raceResultText()); return; }
+  $('#race-code').textContent = raceCode();
+  if (!MFE.nav.openDialog(dlg)) return;
+  requestAnimationFrame(() => {
+    // Immer schwarz auf weiss: ein dunkler Code auf dunklem Grund ist nicht
+    // lesbar, egal welches Farbschema eingestellt ist.
+    MFE.qr?.draw($('#race-qr'), raceResultText(), { ec: 'M', dark: '#000000', light: '#ffffff' });
+  });
+}
+
+function renderRaceBest() {
+  const el = $('#race-best');
+  if (!el) return;
+  const cat = FUNCTIONS[curve(0).form].category;
+  const best = MFE.quiz.bestOf(cat);
+  el.textContent = best ? t('race.best', { p: best }) : '';
+}
+
+/* --------------------------------------------------------------------------
+   Stand pro Funktionsklasse
+   -------------------------------------------------------------------------- */
+function renderProgress() {
+  const ul = $('#progress-list');
+  if (!ul) return;
+  ul.replaceChildren();
+  const data = MFE.quiz.loadProgress();
+  const rows = Object.entries(data).filter(([, e]) => e.n > 0);
+  if (!rows.length) {
+    const li = document.createElement('li');
+    li.textContent = t('quiz.progressNone');
+    ul.append(li);
+    return;
+  }
+  for (const [cat, e] of rows) {
+    const li = document.createElement('li');
+    li.textContent = t('quiz.progressLine', { cat: t('cat.' + cat), ok: fmt(e.ok, 1), n: e.n });
+    ul.append(li);
+  }
+}
+
+/** Welcher Uebungsmodus ist gerade offen? Aus dem Umschalter gelesen, nicht
+ *  aus dem hidden-Attribut der Panels - mit drei Modi waere das eine
+ *  Fallunterscheidung, die beim naechsten Modus wieder faellig waere. */
+function currentQuizMode() {
+  const on = $('#quiz-modes .seg-btn.is-active');
+  return on?.dataset.mode ?? 'match';
 }
 
 function setQuizMode(mode) {
+  if (!['match', 'build', 'race'].includes(mode)) mode = 'match';
   $$('#quiz-modes .seg-btn').forEach(b => {
     const on = b.dataset.mode === mode;
     b.classList.toggle('is-active', on);
@@ -1196,11 +1680,15 @@ function setQuizMode(mode) {
   });
   $('#mode-match').hidden = mode !== 'match';
   $('#mode-build').hidden = mode !== 'build';
-  $('#mode-traps').hidden = mode !== 'traps';
+  $('#mode-race').hidden = mode !== 'race';
+  // Ein laufender Wettkampf endet beim Verlassen des Modus - eine Uhr, die
+  // im Hintergrund weiterlaeuft, waere eine Falle.
+  if (mode !== 'race' && race.on) stopRace({ keepSummary: false });
+  renderProgress();
   requestAnimationFrame(() => {
     if (mode === 'match') { if (!quiz.answer) newQuizQuestion(); else drawQuiz(); }
-    else if (mode === 'traps') { if (!traps.task) newTrapTask(); else drawTrap(); }
-    else { if (!practice.target) newPracticeTask(); else drawPractice(); }
+    else if (mode === 'build') { if (!practice.target) newPracticeTask(); else drawPractice(); }
+    else { renderRaceBest(); if (race.on) drawRace(); }
   });
 }
 
@@ -1425,7 +1913,8 @@ async function shareLink() {
    14 · LITE / PRO
    ========================================================================== */
 function proHint(kind) {
-  toast(t(kind === 'cat' ? 'msg.proCat' : 'msg.pro'));
+  const key = kind === 'cat' ? 'msg.proCat' : kind === 'calculus' ? 'msg.needCalculus' : 'msg.pro';
+  toast(t(key));
   MFE.nav.openDialog($('#pro-dialog'));
 }
 
@@ -1441,7 +1930,6 @@ function markProFeatures() {
   lock($('#opt-derivative')?.closest('.chip'), 'calculus');
   lock($('#opt-tangent')?.closest('.chip'), 'calculus');
   lock($('#quiz-modes [data-mode="build"]'), 'practice');
-  lock($('#quiz-modes [data-mode="traps"]'), 'practice');
   lock($('#curve-switch .curve-add'), 'secondCurve');
   $$('[data-feature]').forEach(el => {
     const ok = licence.has(el.dataset.feature);
@@ -1510,7 +1998,7 @@ function renderHomeSelect() {
 function renderInfo() {
   const ul = $('#info-features');
   ul.replaceChildren();
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 12; i++) {
     const li = document.createElement('li');
     li.textContent = t('info.f' + i);
     ul.append(li);
@@ -1571,7 +2059,6 @@ function applyLanguage() {
   MFE.quiz.relabel();
   if (quiz.answer) renderQuizOptions();
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
-  if (traps.task) newTrapTask();
 }
 
 function applyTheme() {
@@ -1581,7 +2068,7 @@ function applyTheme() {
   renderTableHead();
   invalidateTable();
   render();
-  drawQuiz(); drawPractice(); drawTrap(); drawThumbs();
+  drawQuiz(); drawPractice(); drawThumbs();
 }
 
 function applyDisplay() {
@@ -1591,7 +2078,7 @@ function applyDisplay() {
   requestAnimationFrame(() => {
     measureChrome();
     mainGraph.measure(); render();
-    drawQuiz(); drawPractice(); drawTrap(); drawThumbs();
+    drawQuiz(); drawPractice(); drawThumbs();
   });
 }
 
@@ -1611,7 +2098,7 @@ function applyScreen(which) {
     const el = $(`#screen-${s}`);
     if (el) el.classList.toggle('is-active', s === which);
   }
-  if (which !== 'app') stopPlay();
+  if (which !== 'app') { stopPlay(); stopHAnim(); stopRace({ keepSummary: false }); }
   if (which === 'app') requestAnimationFrame(() => { measureChrome(); mainGraph.measure(); render(); });
   if (which === 'home') requestAnimationFrame(drawThumbs);
   if (which === 'info') renderInfo();
@@ -1631,11 +2118,12 @@ function applyTab(name) {
   $$('.tab-panel').forEach(p => p.classList.toggle('is-active', p.id === `tab-${name}`));
   $('#screen-app').dataset.tab = name;
   updateSplit();
-  if (name !== 'explorer') stopPlay();
+  if (name !== 'explorer') { stopPlay(); stopHAnim(); }
+  if (name !== 'quiz' && race.on) stopRace({ keepSummary: false });
   requestAnimationFrame(() => {
     if (name === 'explorer') { mainGraph.measure(); render(); }
     if (name === 'table' && tableDirty) generateTable();
-    if (name === 'quiz') setQuizMode($('#mode-build').hidden ? 'match' : 'build');
+    if (name === 'quiz') setQuizMode(currentQuizMode());
   });
 }
 
@@ -1692,6 +2180,8 @@ function openCategory(cat) {
   state.curves = [makeCurve(form)];
   state.active = 0;
   state.opts.intersections = false;
+  state.traceX = null;
+  clearTrail({ quiet: true });
   state.piAxis = !!FUNCTIONS[form].piAxis;
   // Passender Ausschnitt je Klasse - eine Exponentialkurve im Bereich
   // ±10 ist nur ein senkrechter Strich.
@@ -1813,6 +2303,8 @@ function bindEvents() {
     }
     state.curves[state.active] = makeCurve(form);
     state.piAxis = !!FUNCTIONS[form].piAxis;
+    // Eine Spur aus der vorherigen Klasse waere nur noch Dekoration.
+    clearTrail({ quiet: true });
     syncOptionInputs();
     updateExplorer(); pushHistory();
   });
@@ -1841,13 +2333,43 @@ function bindEvents() {
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
   });
 
+  $('#btn-freeze').addEventListener('click', toggleFreeze);
+  $('#btn-clear-trail').addEventListener('click', () => clearTrail());
+  $('#btn-h-zero').addEventListener('click', playHToZero);
+  $('#secant-h').addEventListener('input', (e) => {
+    stopHAnim();
+    const v = parseFloat(e.target.value);
+    state.secantH = Number.isFinite(v) ? Math.round(v * 1000) / 1000 : 0;
+    updateSecantRow();
+    render();
+  });
+  $('#secant-h').addEventListener('change', () => pushHistory());
+
+  // Zeile in der Wertetabelle antippen -> Punkt im Graphen
+  $('#values-table').addEventListener('click', (e) => {
+    const tr = e.target.closest('tbody tr');
+    if (tr) traceFromRow(tr);
+  });
+
   for (const key of Object.keys(state.opts)) {
     const el = $(`#opt-${key}`);
     if (!el) continue;
     el.addEventListener('change', () => {
       if (key === 'drag' && !licence.has('drag')) { el.checked = false; proHint(); return; }
-      if ((key === 'derivative' || key === 'tangent') && !licence.has('calculus')) { el.checked = false; proHint(); return; }
+      if ((key === 'derivative' || key === 'tangent' || key === 'secant') && !licence.has('calculus')) {
+        el.checked = false;
+        proHint('calculus');       // eine Meldung, nicht zwei uebereinander
+        return;
+      }
       state.opts[key] = el.checked;
+      if (key === 'secant') {
+        stopHAnim();
+        if (el.checked) ensureAnchorVisible();
+        updateSecantRow();
+      }
+      if (key === 'trail' && !el.checked) clearTrail({ quiet: true });
+      if (key === 'trace' && !el.checked) { state.traceX = null; markTableRow(); }
+      if (key === 'showTerm') syncEquationValues();
       mainGraph.canvas.classList.toggle('is-draggable', state.opts.drag);
       // Die Tangente braucht eine Stelle. Ohne diese Vorgabe stuende sie
       // beim Einschalten unsichtbar irgendwo ausserhalb.
@@ -1910,7 +2432,7 @@ function bindEvents() {
   $('#btn-copy-table').addEventListener('click', copyTable);
 
   $$('#quiz-modes .seg-btn').forEach(b => b.addEventListener('click', () => {
-    if ((b.dataset.mode === 'build' || b.dataset.mode === 'traps') && !licence.has('practice')) { proHint(); return; }
+    if (b.dataset.mode === 'build' && !licence.has('practice')) { proHint(); return; }
     setQuizMode(b.dataset.mode);
   }));
   $('#btn-next-quiz').addEventListener('click', () => newQuizQuestion(false));
@@ -1920,14 +2442,30 @@ function bindEvents() {
   });
   $('#quiz-options').addEventListener('click', (e) => {
     const b = e.target.closest('.quiz-opt');
-    if (b) answerQuiz(Number(b.dataset.index));
+    if (b) answerQuiz(Number(b.dataset.pos));
+  });
+
+  // --- Wettkampf ---
+  $('#btn-race-start').addEventListener('click', startRace);
+  $('#btn-race-again').addEventListener('click', startRace);
+  $('#btn-race-stop').addEventListener('click', () => stopRace({ keepSummary: false }));
+  $('#race-options').addEventListener('click', (e) => {
+    const b = e.target.closest('.quiz-opt');
+    if (b) raceAnswer(Number(b.dataset.pos));
+  });
+  $('#btn-race-code').addEventListener('click', showRaceCode);
+  $('#btn-race-close').addEventListener('click', () => $('#race-dialog').close());
+  $('#btn-race-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(raceResultText()); toast(t('msg.copied')); }
+    catch { toast(t('msg.copyFail')); }
+  });
+  $('#btn-progress-reset').addEventListener('click', () => {
+    MFE.quiz.resetProgress();
+    renderProgress();
+    renderRaceBest();
+    toast(t('quiz.resetDone'));
   });
   $('#btn-check').addEventListener('click', checkPractice);
-  $('#btn-next-trap').addEventListener('click', newTrapTask);
-  $('#trap-options').addEventListener('click', (e) => {
-    const b = e.target.closest('.quiz-opt');
-    if (b) answerTrap(Number(b.dataset.index));
-  });
   $('#btn-new-task').addEventListener('click', newPracticeTask);
 
   document.addEventListener('keydown', (e) => {
@@ -1948,7 +2486,7 @@ function bindEvents() {
   const onResize = debounce(() => {
     measureChrome();
     if (mainGraph.measure()) render();
-    drawQuiz(); drawPractice(); drawTrap(); drawThumbs();
+    drawQuiz(); drawPractice(); drawThumbs();
   }, 100);
 
   if ('ResizeObserver' in window) {
@@ -1967,7 +2505,13 @@ function bindEvents() {
     applyTheme();
   });
 
-  document.addEventListener('visibilitychange', () => { if (document.hidden) stopPlay(); });
+  /* Weggeschaltete App: alles anhalten, was von selbst weiterlaeuft. Eine
+     Wettkampfuhr, die im Hintergrund abläuft, waere unfair. */
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    stopPlay(); stopHAnim();
+    if (race.on) stopRace({ keepSummary: false });
+  });
 
   addEventListener('mfe:licence-changed', () => {
     markProFeatures();
@@ -2085,6 +2629,8 @@ function init() {
       state.opts = session.opts;
       state.table = session.table;
       state.tangentX = session.tangentX;
+      state.secantH = session.secantH;
+      state.frozen = session.frozen;
     }
   }
 
@@ -2138,11 +2684,7 @@ function init() {
 /* Nur fuer die Selbsttests nach aussen gereicht. Die App selbst ruft diese
    Funktionen intern auf; ohne diesen Zugang liesse sich das Abmelden des
    Service Workers nicht pruefen. */
-MFE.app = {
-  registerServiceWorker,
-  get version() { return APP_VERSION; },
-  practiceTarget: () => (practice.target ? { ...practice.target } : null)
-};
+MFE.app = { registerServiceWorker, get version() { return APP_VERSION; } };
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();

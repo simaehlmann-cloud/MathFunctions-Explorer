@@ -34,20 +34,8 @@ const MAX_TEXT    = 200;
 const MAX_OPTIONS = 6;
 const MAX_LINK    = 12000;        // Zeichen; darueber weigert sich mancher Browser
 
-/* ACHTUNG: TYPES ist Teil des Binaerformats fuer Links (der Index steht im
-   Code). Nur HINTEN anhaengen - eine Umsortierung macht jeden bereits
-   verteilten Link unlesbar. */
-const TYPES = ['match', 'build', 'value', 'readoff', 'truefalse', 'choice',
-               'tableToEq', 'graphToTable', 'pointsToEq'];
-
-/** Aufgaben mit Funktion und Parametern (alles ausser der freien Frage). */
-const GRAPH_TYPES = new Set(['match', 'build', 'value', 'readoff', 'truefalse',
-                             'tableToEq', 'graphToTable', 'pointsToEq']);
-
-/** Aufgaben, bei denen tatsaechlich ein Koordinatensystem gezeichnet wird.
-    Beim Darstellungswechsel ist genau das der Punkt: aus der TABELLE oder
-    aus PUNKTEN auf die Gleichung schliessen - ohne den Graphen zu sehen. */
-const CANVAS_TYPES = new Set(['match', 'build', 'value', 'readoff', 'truefalse', 'graphToTable']);
+const TYPES = ['match', 'build', 'value', 'readoff', 'truefalse', 'choice'];
+const GRAPH_TYPES = new Set(['match', 'build', 'value', 'readoff', 'truefalse']);
 
 /* Von aussen gesetzt (app.js), damit quiz.js nichts ueber den Rest der App
    wissen muss. */
@@ -127,25 +115,6 @@ function sanitizeTask(raw) {
     task.what = what;
     return task;
   }
-  if (type === 'tableToEq') {
-    const opts = Array.isArray(raw.options) ? raw.options : [];
-    task.options = opts.map(o => sanitizeValues(form, o)).filter(Boolean).slice(0, 3);
-    if (!task.options.length) task.options = makeDistractors(form, values, 3);
-    // Eine Tabellenaufgabe ohne definierte Werte waere leer.
-    if (!sampleRows(form, values)) return null;
-    return task;
-  }
-  if (type === 'graphToTable' || type === 'pointsToEq') {
-    const want = type === 'pointsToEq' ? 2 : 3;
-    const xs = Array.isArray(raw.xs) ? raw.xs.map(Number).filter(Number.isFinite) : [];
-    task.xs = xs.slice(0, want).map(x => clamp(Math.round(x * 1e4) / 1e4, -1e4, 1e4));
-    if (task.xs.length !== want) return null;
-    // Jede genannte Stelle muss auch einen Wert haben.
-    if (!task.xs.every(x => Number.isFinite(FUNCTIONS[form].f(x, values)))) return null;
-    if (new Set(task.xs).size !== want) return null;      // keine doppelten Stellen
-    return task;
-  }
-
   if (type === 'truefalse') {
     task.statement = cleanText(raw.statement, MAX_TEXT);
     if (!task.statement) return null;
@@ -311,13 +280,10 @@ function packQuiz(quiz) {
     if (fi < 0) throw new Error('unbekannte Darstellungsform: ' + task.form);
     w.u8(fi);
     writeValues(w, task.form, task.values);
-    if (task.type === 'match' || task.type === 'tableToEq') {
+    if (task.type === 'match') {
       const opts = task.options ?? [];
       w.u8(opts.length);
       for (const o of opts) writeValues(w, task.form, o);
-    } else if (task.type === 'graphToTable' || task.type === 'pointsToEq') {
-      w.u8(task.xs.length);
-      for (const x of task.xs) w.num(x);
     } else if (task.type === 'value') {
       w.num(task.x0);
     } else if (task.type === 'readoff') {
@@ -357,16 +323,11 @@ function unpackQuiz(bytes) {
     const form = FORM_ORDER[r.u8()];
     if (!form || !FUNCTIONS[form]) return null;
     const task = { type, form, values: readValues(r, form) };
-    if (type === 'match' || type === 'tableToEq') {
+    if (type === 'match') {
       const n = r.u8();
       if (n > 8) return null;
       task.options = [];
       for (let k = 0; k < n; k++) task.options.push(readValues(r, form));
-    } else if (type === 'graphToTable' || type === 'pointsToEq') {
-      const n = r.u8();
-      if (n > 8) return null;
-      task.xs = [];
-      for (let k = 0; k < n; k++) task.xs.push(r.num());
     } else if (type === 'value') {
       task.x0 = r.num();
     } else if (type === 'readoff') {
@@ -433,12 +394,99 @@ function randomValues(form) {
   return out;
 }
 
-/** Falsche Antworten fuer den Zuordnungstyp. Sie muessen sich sichtbar
- *  unterscheiden, sonst raet man richtig, ohne etwas zu koennen. */
+/* --------------------------------------------------------------------------
+   Falsche Antworten aus Fehlvorstellungen
+   Bis v6.5 wurde ein Parameter zufaellig aus seinem Pool ersetzt. Eine solche
+   Falschantwort ist beliebig: wer sie waehlt, hat sich irgendwie vertan, und
+   die App kann daraus nichts lernen.
+
+   Jetzt entstehen die Ablenker aus den Fehlern, die im Unterricht
+   tatsaechlich vorkommen - Vorzeichen der Verschiebung, Steigung und
+   Achsenabschnitt vertauscht, Kehrwert des Streckfaktors. Wer eine solche
+   Antwort waehlt, bekommt in diagnose() genau dazu die Rueckmeldung.
+
+   Wichtig: die Ablenker muessen sich SICHTBAR unterscheiden. Ein Ablenker,
+   dessen Term identisch aussieht (a = 1 statt a = 1), wird verworfen; wenn
+   die Fehlvorstellungen nicht genug hergeben, fuellt der alte Zufallsweg auf.
+   -------------------------------------------------------------------------- */
+const roleOf = (form, id) => FUNCTIONS[form]?.params.find(p => p.id === id)?.role ?? '';
+const paramsWith = (form, role) => FUNCTIONS[form].params.filter(p => p.role === role);
+
+/** Erzeugt die typischen Verwechslungen als fertige Wertesaetze. */
+function misconceptionCandidates(form, correct) {
+  const d = FUNCTIONS[form];
+  const out = [];
+  const add = (values, why) => { if (values) out.push({ values, why }); };
+  const flip = (id) => {
+    const p = d.params.find(x => x.id === id);
+    if (!p) return null;
+    const v = -correct[id];
+    if (v === correct[id]) return null;                         // 0 bleibt 0
+    if (v < (p.hardMin ?? -Infinity) || v > (p.hardMax ?? Infinity)) return null;
+    return { ...correct, [id]: v };
+  };
+
+  // 1 + 2: Verschiebung in die falsche Richtung, innen wie aussen
+  for (const p of d.params) {
+    if (p.role !== 'shiftX' && p.role !== 'shiftY') continue;
+    add(flip(p.id), p.role === 'shiftX' ? 'innerShift' : 'shiftDir');
+  }
+  // 3: Steigung faellt statt zu steigen
+  for (const p of paramsWith(form, 'slope')) add(flip(p.id), 'slopeSign');
+  // 4: Oeffnungsrichtung / Spiegelung
+  for (const p of paramsWith(form, 'stretch')) add(flip(p.id), 'sign');
+  // 5: Kehrwert des Streckfaktors (Streckung und Stauchung verwechselt)
+  for (const p of [...paramsWith(form, 'stretch'), ...paramsWith(form, 'freq'), ...paramsWith(form, 'base')]) {
+    const v0 = correct[p.id];
+    if (!Number.isFinite(v0) || Math.abs(v0) < 0.2 || Math.abs(Math.abs(v0) - 1) < 1e-9) continue;
+    const v = Math.round((1 / v0) * 100) / 100;
+    if (v >= (p.hardMin ?? -Infinity) && v <= (p.hardMax ?? Infinity)) {
+      add({ ...correct, [p.id]: v }, 'reciprocal');
+    }
+  }
+  // 6: zwei Parameter vertauscht - der Klassiker bei y = m\u00b7x + b
+  const swappable = d.params.filter(p => ['slope', 'shiftY', 'shiftX', 'coef'].includes(p.role));
+  for (let i = 0; i < swappable.length; i++) {
+    for (let j = i + 1; j < swappable.length; j++) {
+      const [p, q] = [swappable[i], swappable[j]];
+      if (correct[p.id] === correct[q.id]) continue;
+      const cand = { ...correct, [p.id]: correct[q.id], [q.id]: correct[p.id] };
+      const inRange = (r, v) => v >= (r.hardMin ?? -Infinity) && v <= (r.hardMax ?? Infinity);
+      if (inRange(p, correct[q.id]) && inRange(q, correct[p.id])) add(cand, 'swap');
+    }
+  }
+  // 7: knapp daneben - trainiert genaues Ablesen
+  for (const p of d.params) {
+    const step = Math.max(p.step * 5, 1);
+    const v = Math.round((correct[p.id] + step) * 100) / 100;
+    if (v <= (p.hardMax ?? Infinity)) add({ ...correct, [p.id]: v }, 'offBy');
+  }
+  return out;
+}
+
 function makeDistractors(form, correct, n = 3) {
   const d = FUNCTIONS[form];
   const seen = new Set([d.rhs(correct)]);
   const out = [];
+
+  const take = (values) => {
+    const key = d.rhs(values);
+    if (seen.has(key)) return false;
+    // Zwei Wertesaetze koennen denselben Graphen erzeugen (a = 0 bei der
+    // Parabel). Eine solche "falsche" Antwort waere nicht falsch.
+    if (sameCurve(form, values, correct)) return false;
+    seen.add(key);
+    out.push(values);
+    return true;
+  };
+
+  const cands = misconceptionCandidates(form, correct).sort(() => Math.random() - 0.5);
+  for (const c of cands) {
+    if (out.length >= n) break;
+    take(c.values);
+  }
+
+  // Auffuellen, falls die Fehlvorstellungen nicht genug hergeben.
   let guard = 0;
   while (out.length < n && guard++ < 120) {
     const cand = { ...correct };
@@ -446,23 +494,101 @@ function makeDistractors(form, correct, n = 3) {
     const alt = (p.pool ?? [p.min, p.max]).filter(x => x !== correct[p.id]);
     if (!alt.length) continue;
     cand[p.id] = pick(alt);
-    if (Math.random() < 0.4) {
-      const q = pick(d.params);
-      const alt2 = (q.pool ?? []).filter(x => x !== cand[q.id]);
-      if (alt2.length) cand[q.id] = pick(alt2);
-    }
-    const key = d.rhs(cand);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(cand);
+    take(cand);
   }
   return out;
 }
 
-/** Tabellenzeilen fuer die Darstellungswechsel-Aufgaben. Liegt in
- *  js/diagnose.js, weil dort auch sichergestellt wird, dass nur definierte
- *  Werte herauskommen (Wurzel, Logarithmus, Polstellen). */
-const sampleRows = (form, values, n = 5) => MFE.diagnose.sampleTable(form, values, n, -2, 1);
+/** Liefern zwei Wertesaetze im sichtbaren Bereich praktisch denselben Graphen?
+ *  Zehn Stuetzstellen genuegen; es geht nicht um einen Beweis, sondern darum,
+ *  eine ununterscheidbare Antwortmoeglichkeit zu vermeiden. */
+function sameCurve(form, a, b) {
+  const d = FUNCTIONS[form];
+  const v = viewFor(form);
+  let checked = 0;
+  for (let i = 0; i <= 10; i++) {
+    const x = v.xMin + ((v.xMax - v.xMin) * i) / 10;
+    const ya = d.f(x, a), yb = d.f(x, b);
+    if (!Number.isFinite(ya) || !Number.isFinite(yb)) continue;
+    checked++;
+    if (Math.abs(ya - yb) > 1e-6 * Math.max(1, Math.abs(ya))) return false;
+  }
+  return checked > 0;
+}
+
+/* --------------------------------------------------------------------------
+   Diagnose
+   Vergleicht die gewaehlte Antwort mit der richtigen und benennt den Fehler,
+   statt nur "falsch" zu sagen. Die Reihenfolge ist die Reihenfolge der
+   Aussagekraft: eine Vertauschung erklaert mehr als "Vorzeichen falsch",
+   und beides erklaert mehr als "knapp daneben".
+   Rueckgabe: fertiger Text oder '' - der Aufrufer entscheidet, ob er ihn
+   anzeigt.
+   -------------------------------------------------------------------------- */
+function diagnose(form, chosen, correct) {
+  const d = FUNCTIONS[form];
+  if (!d || !chosen || !correct) return '';
+  const sym = (id) => host.symbolOf(id, form);
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+
+  const diff = d.params.filter(p => !near(chosen[p.id], correct[p.id]));
+  if (!diff.length) return '';
+
+  // Vertauschung: genau zwei Parameter, ueber Kreuz gleich
+  if (diff.length === 2) {
+    const [p, q] = diff;
+    if (near(chosen[p.id], correct[q.id]) && near(chosen[q.id], correct[p.id])) {
+      if (roleOf(form, p.id) === 'root' || roleOf(form, q.id) === 'root') {
+        return t('diag.generic');           // x1/x2 vertauscht ist dieselbe Kurve
+      }
+      return t('diag.swap', { s: sym(p.id), s2: sym(q.id) });
+    }
+    // Streckung und Verschiebung gegeneinander verrechnet
+    const stretch = diff.find(x => x.role === 'stretch');
+    const shift = diff.find(x => x.role === 'shiftX' || x.role === 'shiftY');
+    if (stretch && shift) return t('diag.stretchShift', { s: sym(stretch.id) });
+  }
+
+  /* Nullstelle mit y-Achsenabschnitt verwechselt: bei der Geraden liegt der
+     Verdacht nahe, wenn der gewaehlte Achsenabschnitt genau die Nullstelle
+     der richtigen Geraden ist. */
+  if (form === 'linear' && near(chosen.m, correct.m) && correct.m !== 0) {
+    const root = -correct.b / correct.m;
+    if (near(chosen.b, Math.round(root * 100) / 100) && !near(root, correct.b)) return t('diag.rootYint');
+  }
+
+  if (diff.length === 1) {
+    const p = diff[0];
+    const cv = chosen[p.id], tv = correct[p.id];
+    const role = p.role || '';
+
+    if (near(cv, -tv) && tv !== 0) {
+      if (role === 'shiftX') return t('diag.innerShift', { s: mfmt(tv) });
+      if (role === 'shiftY') return t('diag.shiftDir', { s: sym(p.id) });
+      if (role === 'slope') return t('diag.slopeSign');
+      return t('diag.sign', { s: sym(p.id) });
+    }
+    if (tv !== 0 && Math.abs(tv) > 0.05 && near(Math.round(cv * 100) / 100, Math.round((1 / tv) * 100) / 100)) {
+      return t('diag.reciprocal', { s: sym(p.id) });
+    }
+    if (role === 'stretch' && near(Math.abs(cv), Math.abs(tv))) return t('diag.sign', { s: sym(p.id) });
+    if (near(Math.abs(cv), Math.abs(tv))) return t('diag.magnitude', { s: sym(p.id) });
+
+    const delta = Math.abs(cv - tv);
+    if (delta <= Math.max(p.step * 6, 1.01)) {
+      return t('diag.offBy', { s: sym(p.id), d: mfmt(delta) });
+    }
+    return t('diag.magnitude', { s: sym(p.id) });
+  }
+
+  // Mehr als zwei Abweichungen: Steigung und Achsenabschnitt getrennt
+  // benennen hilft mehr als eine Sammelaussage.
+  const first = diff.find(p => p.role === 'slope' || p.role === 'stretch') || diff[0];
+  if (near(chosen[first.id], -correct[first.id]) && correct[first.id] !== 0) {
+    return first.role === 'slope' ? t('diag.slopeSign') : t('diag.sign', { s: sym(first.id) });
+  }
+  return t('diag.generic');
+}
 
 const eqText = (form, v, name = 'f') => `${name}(x) = ${FUNCTIONS[form].rhs(v)}`;
 
@@ -471,9 +597,6 @@ function taskLabel(task) {
   if (task.type === 'choice') return task.question;
   if (task.type === 'truefalse') return task.statement;
   if (task.type === 'value') return `${t('type.value')}: f(${mfmt(task.x0)})`;
-  if (task.type === 'graphToTable' || task.type === 'pointsToEq') {
-    return `${t('type.' + task.type)}: x = ${task.xs.map(x => mfmt(x)).join(', ')}`;
-  }
   if (task.type === 'readoff') return `${t('type.readoff')}: ${t('poi.' + (task.what === 'yint' ? 'yint' : task.what))}`;
   return `${t('type.' + task.type)}: ${eqText(task.form, task.values)}`;
 }
@@ -507,7 +630,7 @@ function viewFor(form) {
 const BLANK_OPTS = { helpers: false, roots: false, yint: false, vertex: false,
                      drag: false, intersections: false, derivative: false, tangent: false, trace: false };
 
-function drawTaskGraph(graph, task, attempt) {
+function drawTaskGraph(graph, task, attempt, wrongValues) {
   if (!graph.measure()) return false;
   const curves = [];
   if (attempt) curves.push({ form: task.form, values: attempt, color: '--graph' });
@@ -519,9 +642,98 @@ function drawTaskGraph(graph, task, attempt) {
     scale: host.scale()
   };
   if (attempt) scene.ghost = { form: task.form, values: task.values };
+  /* Nach einer falschen Antwort die GEWAEHLTE Kurve dazuzeichnen. "Du hast
+     nach rechts verschoben, richtig war links" sieht man in einer Sekunde
+     und liest man in keinem Rueckmeldungstext. */
+  else if (wrongValues) {
+    scene.ghost = { form: task.form, values: wrongValues };
+    scene.ghostLabel = t('quiz.yourAnswer');
+  }
   drawScene(graph, scene);
   return true;
 }
+
+/* --------------------------------------------------------------------------
+   Antwortkacheln
+   Form UND Farbe, nicht nur ein Buchstabe: Kacheln lassen sich am Beamer und
+   quer durch den Raum schneller ansprechen ("das Dreieck"). Traeger der
+   Information ist die FORM - die Farbe ist Beiwerk, damit die Kacheln auch
+   bei Farbfehlsichtigkeit unterscheidbar bleiben. Die Farben liegen bewusst
+   in einer eigenen Palette (--opt1..4) und nicht bei den Parameterfarben:
+   sonst lernen Schuelerinnen "blau = b".
+   -------------------------------------------------------------------------- */
+const OPT_SHAPES = ['\u25b2', '\u25a0', '\u25cf', '\u25c6', '\u2605', '\u2726'];
+
+function optionButton(pos, text) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'quiz-opt';
+  b.dataset.pos = String(pos);
+  const mark = document.createElement('span');
+  mark.className = 'opt-shape';
+  mark.setAttribute('aria-hidden', 'true');
+  mark.style.setProperty('--shape-color', `var(--opt${(pos % 4) + 1})`);
+  mark.textContent = OPT_SHAPES[pos % OPT_SHAPES.length];
+  const label = document.createElement('span');
+  label.className = 'opt-text';
+  label.textContent = text;
+  b.append(mark, label);
+  // Der Screenreader liest die Form nicht vor - er bekommt den Buchstaben.
+  b.setAttribute('aria-label', `${String.fromCharCode(65 + pos)}: ${text}`);
+  return b;
+}
+
+/* --------------------------------------------------------------------------
+   Stand pro Funktionsklasse
+   Eine Punktzahl je Sitzung sagt wenig. Interessant ist, was ueber die Zeit
+   sitzt. Bleibt auf dem Geraet, ohne Namen, ohne Konto.
+   -------------------------------------------------------------------------- */
+const PROGRESS_KEY = 'mfe:progress';
+
+function loadProgress() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [cat, e] of Object.entries(raw)) {
+      if (!CATEGORY_FORMS[cat] || !e || typeof e !== 'object') continue;
+      const n = Math.max(0, Math.min(Number(e.n) || 0, 1e6));
+      const ok = Math.max(0, Math.min(Number(e.ok) || 0, n));
+      const best = Math.max(0, Math.min(Number(e.best) || 0, 1e7));
+      out[cat] = { n, ok, best };
+    }
+    return out;
+  } catch { return {}; }
+}
+
+function saveProgress(data) {
+  try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(data)); return true; }
+  catch { return false; }        // voller oder gesperrter Speicher: kein Grund fuer eine Meldung
+}
+
+/** Ergebnis einer Aufgabe vermerken. `ok` darf 0, 0.5 oder 1 sein. */
+function noteResult(form, ok) {
+  const cat = FUNCTIONS[form]?.category;
+  if (!cat) return;
+  const data = loadProgress();
+  const e = data[cat] ?? (data[cat] = { n: 0, ok: 0, best: 0 });
+  e.n += 1;
+  e.ok += ok === true ? 1 : ok === 'half' ? 0.5 : Number(ok) || 0;
+  e.ok = Math.round(e.ok * 2) / 2;
+  saveProgress(data);
+}
+
+/** Bestmarke des Wettkampfs je Klasse. Gibt zurueck, ob sie neu ist. */
+function noteBest(cat, points) {
+  const data = loadProgress();
+  const e = data[cat] ?? (data[cat] = { n: 0, ok: 0, best: 0 });
+  if (points <= e.best) return false;
+  e.best = points;
+  saveProgress(data);
+  return true;
+}
+const bestOf = (cat) => loadProgress()[cat]?.best ?? 0;
+function resetProgress() { try { localStorage.removeItem(PROGRESS_KEY); } catch {} }
 
 /* Die Formen, die in der aktuellen Ausgabe zur Verfuegung stehen. */
 function allowedForms() {
@@ -618,8 +830,6 @@ function draftDefaults(type) {
   const draft = { type, form, values };
   if (type === 'value') draft.x0 = 2;
   if (type === 'readoff') draft.what = FUNCTIONS[form].vertex ? 'vertex' : 'yint';
-  if (type === 'graphToTable') draft.xs = [-1, 0, 2];
-  if (type === 'pointsToEq') draft.xs = [-1, 2];
   if (type === 'truefalse') { draft.statement = ''; draft.answer = true; }
   if (type === 'choice') { draft.question = ''; draft.options = ['', '']; draft.correct = 0; }
   return draft;
@@ -713,20 +923,6 @@ function renderEditor() {
       const n = parseLoose(v, NaN);
       if (Number.isFinite(n)) d.x0 = n;
     })));
-  }
-
-  if (d.type === 'graphToTable' || d.type === 'pointsToEq') {
-    const want = d.type === 'pointsToEq' ? 2 : 3;
-    d.xs = Array.isArray(d.xs) && d.xs.length === want ? d.xs : (d.type === 'pointsToEq' ? [-1, 2] : [-1, 0, 2]);
-    const wrap = document.createElement('div');
-    wrap.className = 'answer-pair three';
-    for (let i = 0; i < want; i++) {
-      wrap.append(field(`x${i + 1}`, textEl(`editor-x${i + 1}`, fmt(d.xs[i], 4), (v) => {
-        const n = parseLoose(v, NaN);
-        if (Number.isFinite(n)) d.xs[i] = n;
-      })));
-    }
-    box.append(field(t(d.type === 'pointsToEq' ? 'quiz.atPoints' : 'quiz.atValues'), wrap));
   }
 
   if (d.type === 'readoff') {
@@ -839,16 +1035,7 @@ function commitTask() {
     return;
   }
   const prepared = { ...d };
-  if (d.type === 'match' || d.type === 'tableToEq') {
-    prepared.options = makeDistractors(d.form, d.values, 3);
-  }
-  // Stellen ausserhalb des Definitionsbereichs kommentarlos abzulehnen war
-  // frueher der haeufigste Stolperstein - hier dieselbe konkrete Meldung.
-  if ((d.type === 'graphToTable' || d.type === 'pointsToEq')
-      && !d.xs.every(x => Number.isFinite(FUNCTIONS[d.form]?.f(x, d.values)))) {
-    toast(t('quiz.xOutside', { x: d.xs.map(x => mfmt(x)).join(', ') }));
-    return;
-  }
+  if (d.type === 'match') prepared.options = makeDistractors(d.form, d.values, 3);
   const clean = sanitizeTask(prepared);
   if (!clean) { toast(t('quiz.taskIncomplete')); return; }
   if (builder.editing >= 0) builder.quiz.tasks[builder.editing] = clean;
@@ -930,7 +1117,13 @@ function renderList() {
 /* ==========================================================================
    8 · ABSPIELER
    ========================================================================== */
-const player = { quiz: null, index: 0, score: 0, marks: [], locked: false, order: [], ctx: null, graph: null };
+/* attempt: 0 = erster Versuch, 1 = zweiter. wrongValues haelt die zuerst
+   gewaehlte falsche Kurve fest, damit sie im Graphen gezeigt werden kann. */
+const player = { quiz: null, index: 0, score: 0, marks: [], locked: false,
+                 order: [], ctx: null, graph: null, attempt: 0, wrongValues: null };
+
+/** Punktzahl kann durch den zweiten Versuch halb sein. */
+const scoreText = (v) => fmt(Math.round(v * 2) / 2, 1);
 
 function startQuiz(quiz) {
   if (!quiz || !quiz.tasks.length) { toast(t('quiz.needTask')); return; }
@@ -954,10 +1147,12 @@ function renderTask() {
   body.replaceChildren();
   player.locked = false;
   player.ctx = null;
+  player.attempt = 0;
+  player.wrongValues = null;
 
   $('#play-progress').textContent =
     t('quiz.progress', { i: player.index + 1, n: player.quiz.tasks.length });
-  $('#play-score').textContent = String(player.score);
+  $('#play-score').textContent = scoreText(player.score);
   const fb = $('#play-feedback');
   fb.textContent = ''; fb.className = 'feedback';
   $('#btn-play-check').hidden = false;
@@ -970,7 +1165,7 @@ function renderTask() {
   prompt.className = 'play-prompt';
   body.append(prompt);
 
-  if (CANVAS_TYPES.has(task.type)) {
+  if (GRAPH_TYPES.has(task.type)) {
     const cv = document.createElement('canvas');
     cv.id = 'play-canvas';
     cv.className = 'graph-canvas short';
@@ -979,24 +1174,15 @@ function renderTask() {
     body.append(cv);
   }
 
-  if (task.type === 'match' || task.type === 'tableToEq') {
-    // Darstellungswechsel: dieselbe Frage, aber die Vorlage ist eine
-    // Wertetabelle statt eines Graphen. Genau dieser Wechsel zwischen
-    // Gleichung, Graph und Tabelle steht in jedem Kerncurriculum.
-    prompt.textContent = t(task.type === 'match' ? 'quiz.title' : 'rep.fromTable');
-    if (task.type === 'tableToEq') body.append(buildTable(task));
+  if (task.type === 'match') {
+    prompt.textContent = t('quiz.title');
     // Reihenfolge pro Durchgang mischen, aber die richtige Antwort merken.
     const all = [task.values, ...task.options];
     player.order = all.map((_, i) => i).sort(() => Math.random() - 0.5);
     const grid = document.createElement('div');
     grid.className = 'options-grid';
     player.order.forEach((srcIndex, pos) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'quiz-opt';
-      b.dataset.pos = String(pos);
-      b.textContent = `${String.fromCharCode(65 + pos)})  ${eqText(task.form, all[srcIndex])}`;
-      grid.append(b);
+      grid.append(optionButton(pos, eqText(task.form, all[srcIndex])));
     });
     body.append(grid);
     $('#btn-play-check').hidden = true;      // Antwort ist der Klick selbst
@@ -1013,31 +1199,6 @@ function renderTask() {
       onChange: () => drawPlayGraph()
     };
     renderSliderGroup(sliders, player.ctx);
-  }
-
-  if (task.type === 'graphToTable') {
-    prompt.textContent = t('rep.toTable');
-    const wrap = document.createElement('div');
-    wrap.className = 'answer-pair three';
-    task.xs.forEach((x, i) => wrap.append(answerField('play-answer' + (i ? '-' + (i + 1) : ''), `f(${mfmt(x)})`)));
-    body.append(wrap);
-  }
-
-  if (task.type === 'pointsToEq') {
-    const d = FUNCTIONS[task.form];
-    prompt.textContent = t('rep.fromPoints', {
-      pts: task.xs.map(x => `(${mfmt(x)} | ${mfmt(d.f(x, task.values))})`).join('  ')
-    });
-    const eq = document.createElement('p');
-    eq.className = 'editor-eq';
-    eq.textContent = `f(x) = ${d.rhsPattern ? d.rhsPattern() : eqPattern(task.form)}`;
-    body.append(eq);
-    const wrap = document.createElement('div');
-    wrap.className = 'answer-pair three';
-    d.params.forEach((prm, i) => {
-      wrap.append(answerField('play-answer' + (i ? '-' + (i + 1) : ''), host.symbolOf(prm.id, task.form)));
-    });
-    body.append(wrap);
   }
 
   if (task.type === 'value') {
@@ -1079,59 +1240,13 @@ function renderTask() {
     const grid = document.createElement('div');
     grid.className = 'options-grid';
     player.order.forEach((srcIndex, pos) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'quiz-opt';
-      b.dataset.pos = String(pos);
-      b.textContent = `${String.fromCharCode(65 + pos)})  ${task.options[srcIndex]}`;
-      grid.append(b);
+      grid.append(optionButton(pos, task.options[srcIndex]));
     });
     body.append(grid);
     $('#btn-play-check').hidden = true;
   }
 
-  if (CANVAS_TYPES.has(task.type)) requestAnimationFrame(drawPlayGraph);
-}
-
-/** Wertetabelle als DOM - fuer die Aufgabe "welche Gleichung passt zu dieser
- *  Tabelle?". */
-function buildTable(task) {
-  const rows = sampleRows(task.form, task.values) ?? [];
-  const wrap = document.createElement('div');
-  wrap.className = 'table-wrapper compact';
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const trh = document.createElement('tr');
-  for (const label of ['x', 'f(x)']) {
-    const th = document.createElement('th');
-    th.scope = 'col';
-    th.textContent = label;
-    trh.append(th);
-  }
-  thead.append(trh);
-  const tbody = document.createElement('tbody');
-  for (const row of rows) {
-    const tr = document.createElement('tr');
-    for (const v of [row.x, row.y]) {
-      const td = document.createElement('td');
-      td.textContent = mfmt(v);
-      tr.append(td);
-    }
-    tbody.append(tr);
-  }
-  table.append(thead, tbody);
-  wrap.append(table);
-  return wrap;
-}
-
-/** Gleichung mit Platzhaltern statt Zahlen - zeigt, was gesucht ist. */
-function eqPattern(form) {
-  const d = FUNCTIONS[form];
-  return d.tokens().map(tok => {
-    if (tok.text !== undefined) return tok.text;
-    if (tok.sup !== undefined) return '^' + tok.sup;
-    return host.symbolOf(tok.param, form);
-  }).join('');
+  if (GRAPH_TYPES.has(task.type)) requestAnimationFrame(drawPlayGraph);
 }
 
 function answerField(id, label) {
@@ -1157,7 +1272,7 @@ function drawPlayGraph() {
   if (!cv || !player.quiz) return;
   const task = player.quiz.tasks[player.index];
   if (!player.graph || player.graph.canvas !== cv) player.graph = new Graph(cv);
-  drawTaskGraph(player.graph, task, task.type === 'build' ? player.ctx?.values : null);
+  drawTaskGraph(player.graph, task, task.type === 'build' ? player.ctx?.values : null, player.wrongValues);
 }
 
 /** Toleranz beim Ablesen: grosszuegig genug fuer den Blick auf den Graphen,
@@ -1169,6 +1284,7 @@ function checkAnswer() {
   const task = player.quiz.tasks[player.index];
   let ok = false;
   let solution = '';
+  let hint = '';
 
   if (task.type === 'value') {
     const target = FUNCTIONS[task.form].f(task.x0, task.values);
@@ -1203,73 +1319,86 @@ function checkAnswer() {
     }
   }
 
-  if (task.type === 'graphToTable') {
+  if (task.type === 'build') {
     const d = FUNCTIONS[task.form];
     const wrong = [];
-    let allOk = true;
-    task.xs.forEach((x, i) => {
-      const want = d.f(x, task.values);
-      const given = parseLoose($('#play-answer' + (i ? '-' + (i + 1) : ''))?.value, NaN);
-      if (!(Number.isFinite(given) && Math.abs(given - want) <= readTol(want))) {
-        allOk = false;
-        wrong.push(`f(${mfmt(x)}) = ${mfmt(want)}`);
+    for (const p of d.params) {
+      const diff = player.ctx.values[p.id] - task.values[p.id];
+      const tol = MFE.math.tolerance(task.values[p.id], p.step);
+      if (Math.abs(diff) > tol) {
+        wrong.push(`${host.symbolOf(p.id, task.form)} ${t(diff > 0 ? 'build.tooHigh' : 'build.tooLow')}`);
       }
-    });
-    ok = allOk;
-    solution = wrong.join(', ');
+    }
+    ok = wrong.length === 0;
+    solution = ok ? eqText(task.form, task.values) : `${t('build.close')} ${wrong.join(', ')}`;
+    if (!ok) hint = diagnose(task.form, player.ctx.values, task.values);
   }
 
-  if (task.type === 'pointsToEq') {
-    // Geprueft werden die Parameter, nicht die Kurve: gesucht ist die
-    // Gleichung, und die soll auch hingeschrieben werden.
-    const d = FUNCTIONS[task.form];
-    let allOk = true;
-    d.params.forEach((prm, i) => {
-      const want = task.values[prm.id];
-      const given = parseLoose($('#play-answer' + (i ? '-' + (i + 1) : ''))?.value, NaN);
-      if (!(Number.isFinite(given) && Math.abs(given - want) <= tolerance(want, prm.step))) allOk = false;
-    });
-    ok = allOk;
-    solution = eqText(task.form, task.values);
+  /* Ein zweiter Versuch, bevor die Loesung steht. Beim Nachbauen bleiben die
+     Regler ohnehin stehen; bei Eingabefeldern bleibt der Text erhalten,
+     damit die Nutzerin sieht, was sie geschrieben hat. */
+  if (!ok && player.attempt === 0) {
+    player.attempt = 1;
+    const fb = $('#play-feedback');
+    fb.className = 'feedback err';
+    fb.textContent = `${t('quiz.retry')} ${hint}`.trim();
+    return;
   }
-
-  if (task.type === 'build') {
-    // Dieselbe Analyse wie im Uebungsteil - nicht zwei Auswertungen, die
-    // frueher oder spaeter auseinanderlaufen.
-    const res = MFE.diagnose.analyseBuild(task.form, task.values, player.ctx.values);
-    ok = res.solved;
-    solution = ok
-      ? eqText(task.form, task.values)
-      : res.findings
-          .map(f => t('find.' + f.kind, {
-            ...f.vars,
-            a: host.symbolOf(f.ids[0], task.form),
-            b: f.ids[1] ? host.symbolOf(f.ids[1], task.form) : ''
-          }))
-          .join(' \u00b7 ');
-  }
-
-  finish(ok, solution);
+  finish(ok, solution, hint);
 }
 
-function answerByClick(correct, solution, clickedEl, correctEl) {
+/**
+ * Antwort per Klick auf eine Kachel.
+ * Beim ERSTEN Fehlversuch wird die Aufgabe nicht abgeschlossen: die gewaehlte
+ * Kachel wird gesperrt, ein Hinweis erscheint, der Rest bleibt anklickbar.
+ * Das kann ein Quiz mit Zeitdruck nicht - und genau darin liegt der
+ * didaktische Unterschied.
+ */
+function answerByClick(correct, solution, clickedEl, correctEl, hint, chosenValues) {
   if (player.locked) return;
-  $$('#play-body .quiz-opt').forEach(b => { b.disabled = true; });
+  const opts = $$('#play-body .quiz-opt');
+  if (!correct && player.attempt === 0 && opts.length > 2) {
+    player.attempt = 1;
+    player.wrongValues = chosenValues ?? null;
+    if (clickedEl) { clickedEl.classList.add('is-wrong', 'is-tried'); clickedEl.disabled = true; }
+    const fb = $('#play-feedback');
+    fb.className = 'feedback err';
+    fb.textContent = `${t('quiz.retry')} ${hint ?? ''}`.trim();
+    if (player.wrongValues) drawPlayGraph();
+    return;
+  }
+  opts.forEach(b => { b.disabled = true; });
   correctEl?.classList.add('is-correct');
-  if (!correct) clickedEl?.classList.add('is-wrong');
-  finish(correct, solution);
+  if (!correct) {
+    clickedEl?.classList.add('is-wrong');
+    if (chosenValues) { player.wrongValues = chosenValues; drawPlayGraph(); }
+  }
+  finish(correct, solution, hint);
 }
 
-function finish(ok, solution) {
+/**
+ * Schliesst eine Aufgabe ab. Ein im zweiten Versuch gefundenes Ergebnis
+ * zaehlt halb: es ist mehr als raten und weniger als koennen.
+ */
+function finish(ok, solution, hint) {
   player.locked = true;
+  const mark = ok ? (player.attempt === 0 ? true : 'half') : false;
   // Erst hier eintragen, nicht beim Rendern: eine Aufgabe kann uebersprungen
   // werden, dann darf sie auch keinen Eintrag bekommen.
-  player.marks[player.index] = !!ok;
-  if (ok) player.score++;
-  $('#play-score').textContent = String(player.score);
+  player.marks[player.index] = mark;
+  player.score += mark === true ? 1 : mark === 'half' ? 0.5 : 0;
+  $('#play-score').textContent = scoreText(player.score);
+
+  const task = player.quiz.tasks[player.index];
+  if (task.form) noteResult(task.form, mark);
+
   const fb = $('#play-feedback');
   fb.className = 'feedback ' + (ok ? 'ok' : 'err');
-  fb.textContent = ok ? t('quiz.right') : `${t('quiz.wrong')} ${solution}`.trim();
+  if (ok) {
+    fb.textContent = mark === 'half' ? t('quiz.halfPoint') : t('quiz.right');
+  } else {
+    fb.textContent = `${t('quiz.wrong')} ${solution ?? ''} ${hint ?? ''}`.trim();
+  }
   $('#btn-play-check').hidden = true;
   $('#btn-play-next').hidden = false;
   $('#btn-play-next').focus();
@@ -1289,14 +1418,15 @@ function showSummary() {
   body.replaceChildren();
   const n = player.quiz.tasks.length;
   const h = document.createElement('h3');
-  h.textContent = t('quiz.result', { ok: player.score, all: n });
+  h.textContent = t('quiz.result', { ok: scoreText(player.score), all: n });
   const list = document.createElement('ul');
   list.className = 'result-list';
   player.quiz.tasks.forEach((task, i) => {
     const li = document.createElement('li');
     const m = player.marks[i];
     li.className = m === true ? 'is-ok' : m === false ? 'is-err' : '';
-    li.textContent = `${i + 1}. ${taskLabel(task)}`;
+    const sign = m === 'half' ? '\u00bd ' : '';
+    li.textContent = `${sign}${i + 1}. ${taskLabel(task)}`;
     list.append(li);
   });
 
@@ -1312,9 +1442,9 @@ function showSummary() {
   $('#btn-play-next').hidden = true;
   $('#btn-play-again').hidden = false;
   $('#btn-play-copy').hidden = false;
-  // Nur anbieten, wenn es auch etwas zu wiederholen gibt.
-  $('#btn-play-wrong').hidden = player.score >= n;
-  $('#btn-play-copy').hidden = false;
+  // Nur anbieten, wenn es auch etwas zu wiederholen gibt. Halb geloeste
+  // Aufgaben zaehlen dabei nicht als falsch - sie wurden ja gefunden.
+  $('#btn-play-wrong').hidden = !player.marks.some(m => m === false);
 }
 
 
@@ -1342,16 +1472,6 @@ function randomTask(type, form) {
   const d = FUNCTIONS[form];
 
   if (type === 'match') return sanitizeTask({ type, form, values: vals, options: makeDistractors(form, vals, 3) });
-  if (type === 'tableToEq') return sanitizeTask({ type, form, values: vals, options: makeDistractors(form, vals, 3) });
-
-  if (type === 'graphToTable' || type === 'pointsToEq') {
-    const want = type === 'pointsToEq' ? 2 : 3;
-    const xs = [];
-    for (let k = -4; k <= 4 && xs.length < want; k++) {
-      if (Number.isFinite(d.f(k, vals))) xs.push(k);
-    }
-    return xs.length === want ? sanitizeTask({ type, form, values: vals, xs }) : null;
-  }
   if (type === 'build') return sanitizeTask({ type, form, values: vals });
 
   if (type === 'value') {
@@ -1549,13 +1669,13 @@ function resultText() {
   const n = player.quiz.tasks.length;
   const lines = [
     player.quiz.title,
-    t('quiz.result', { ok: player.score, all: n }),
+    t('quiz.result', { ok: scoreText(player.score), all: n }),
     new Date().toLocaleDateString(MFE.i18n.lang === 'de' ? 'de-DE' : 'en-GB'),
     ''
   ];
   player.quiz.tasks.forEach((task, i) => {
     const m = player.marks[i];
-    const sign = m === true ? '\u2713' : m === false ? '\u2717' : '\u2013';
+    const sign = m === true ? '\u2713' : m === 'half' ? '\u00bd' : m === false ? '\u2717' : '\u2013';
     lines.push(`${sign} ${i + 1}. ${taskLabel(task)}`);
   });
   return lines.join('\n');
@@ -1651,10 +1771,14 @@ function bind() {
     }
     const pos = Number(opt.dataset.pos);
     const src = player.order[pos];
-    if (task.type === 'match' || task.type === 'tableToEq') {
+    if (task.type === 'match') {
       const rightPos = player.order.indexOf(0);      // 0 = die richtige Kurve
       const rightEl = $(`#play-body .quiz-opt[data-pos="${rightPos}"]`);
-      answerByClick(src === 0, eqText(task.form, task.values), opt, rightEl);
+      const all = [task.values, ...task.options];
+      const chosen = all[src];
+      const hint = src === 0 ? '' : diagnose(task.form, chosen, task.values);
+      answerByClick(src === 0, eqText(task.form, task.values), opt, rightEl, hint,
+                    src === 0 ? null : chosen);
     } else if (task.type === 'choice') {
       const rightPos = player.order.indexOf(task.correct);
       const rightEl = $(`#play-body .quiz-opt[data-pos="${rightPos}"]`);
@@ -1733,6 +1857,9 @@ return {
   init, openList, openBuilder, startQuiz, importFromHash, relabel,
   buildRandomQuiz, showQr, resultText,
   loadAll, getQuiz, sanitizeQuiz, decodeQuiz, encodeQuiz, linkFor,
-  randomValues, makeDistractors, randomTask, eqText, TYPES
+  randomValues, makeDistractors, eqText, TYPES,
+  // v6.6: von app.js mitbenutzt (Ueben-Reiter, Wettkampf, Stand)
+  diagnose, optionButton, viewFor, drawTaskGraph,
+  loadProgress, noteResult, noteBest, bestOf, resetProgress
 };
 })();

@@ -128,7 +128,7 @@ if (!window.navigator.clipboard) {
 }
 
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
-               'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
+               'js/graph.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 for (const f of files) {
   let src = readFileSync(path.join(ROOT, f), 'utf8');
   if (LITE && f === 'js/licence.js') src = src.replace(/const DEV_EDITION = '\w+';/, "const DEV_EDITION = 'lite';");
@@ -208,7 +208,9 @@ if (LITE) {
 click('#btn-home'); await tick();
 click('#card-info'); await tick();
 expect($('#screen-info').classList.contains('is-active'), 'Info-Seite geoeffnet');
-expect($('#info-features').children.length === 10, 'Zehn Punkte in der Funktionsliste');
+expect($('#info-features').children.length === 12, 'Zwoelf Punkte in der Funktionsliste');
+expect([...$('#info-features').children].every(li => li.textContent && !li.textContent.startsWith('info.')),
+       'Kein unuebersetzter Schluessel in der Funktionsliste');
 expect($('#info-lite-box').hidden === !LITE, 'Lite-Hinweis erscheint genau in der Lite-Ausgabe');
 
 // Quiz-Baukasten
@@ -282,7 +284,18 @@ if (LITE) {
   expect($('#play-body .quiz-opt').length !== 0 || $$('#play-body .quiz-opt').length === 4,
          'Zuordnungsaufgabe zeigt vier Antworten');
   click($$('#play-body .quiz-opt')[0]); await tick();
-  expect(!$('#btn-play-next').hidden, 'Nach der Antwort geht es weiter');
+  /* Neu ab v6.6: der erste Fehlversuch schliesst die Aufgabe NICHT ab. Es
+     gibt einen Hinweis und einen zweiten Versuch. War der erste Klick
+     zufaellig richtig, geht es sofort weiter. */
+  if ($('#btn-play-next').hidden) {
+    expect($('#play-feedback').textContent.length > 0, 'Erster Fehlversuch bringt einen Hinweis');
+    expect($$('#play-body .quiz-opt').filter(b => b.disabled).length === 1,
+           'Nur die falsch gewaehlte Kachel ist gesperrt');
+    const open = $$('#play-body .quiz-opt').find(b => !b.disabled);
+    click(open); await tick();
+  }
+  expect(!$('#btn-play-next').hidden, 'Nach dem zweiten Versuch geht es weiter');
+  expect($$('#play-body .quiz-opt').every(b => b.disabled), 'Danach sind alle Kacheln gesperrt');
   click('#btn-play-next'); await tick();
   expect($('#play-progress').textContent.includes('2'), 'Zweite Aufgabe erreicht');
   click('#btn-play-check'); await tick();
@@ -526,6 +539,176 @@ if (chip) {
 let guardBack = 0;
 while (guardBack++ < 12 && !$('#screen-home').classList.contains('is-active')) await back();
 expect($('#screen-home').classList.contains('is-active'), 'wiederholtes Zurueck endet auf der Startseite');
+
+/* ==========================================================================
+   v6.6: Spur, Vergleichskurve, Sekante, Wertestreifen, Tabelle <-> Graph,
+   Fehlvorstellungen, Wettkampf
+   ========================================================================== */
+click('#btn-home'); await tick();
+click('.fn-card[data-category="linear"]'); await tick();
+
+// --- Konkreter Term unter der Gleichung ---
+const termLine = () => $('#equations [data-value="0"]');
+expect(termLine(), 'Zweite Zeile mit dem Term steht da');
+expect(/f\(x\)\s*=/.test(termLine().textContent), 'Term nennt die Funktion');
+{
+  const before = termLine().textContent;
+  const sl = $('#slider-m');
+  sl.value = '3';
+  sl.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await tick(); await tick();
+  expect(termLine().textContent !== before, 'Term folgt dem Regler sofort');
+}
+click('#opt-showTerm'); await tick();
+expect(termLine().hidden, 'Ausgeschaltet verschwindet nur die Zahlenzeile');
+expect(!$('#equations [data-curve="0"]').hidden, 'Die Struktur mit den Buchstaben bleibt stehen');
+click('#opt-showTerm'); await tick();
+
+// --- Kurve festhalten ---
+click('#btn-freeze'); await tick();
+expect($('#btn-freeze').getAttribute('aria-pressed') === 'true', 'Vergleichskurve ist festgehalten');
+click('#btn-freeze'); await tick();
+expect($('#btn-freeze').getAttribute('aria-pressed') === 'false', 'Vergleich laesst sich wieder loesen');
+
+// --- Spur ---
+click('#opt-trail'); await tick();
+{
+  const sl = $('#slider-b');
+  for (const v of ['1', '2', '3']) {
+    sl.value = v;
+    sl.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await tick();
+  }
+  expect(!$('#btn-clear-trail').hidden, 'Die Spur meldet sich mit dem Loeschknopf');
+  click('#btn-clear-trail'); await tick();
+  expect($('#btn-clear-trail').hidden, 'Spur laesst sich loeschen');
+}
+click('#opt-trail'); await tick();
+
+// --- Sekante ---
+expect($('#secant-row').hidden, 'Sekantenregler ist zunaechst verborgen');
+click('#opt-secant'); await tick();
+if (LITE) {
+  expect($('#secant-row').hidden, 'Lite: Sekante bleibt gesperrt');
+  expect(!$('#opt-secant').checked, 'Lite: der Schalter springt zurueck');
+  expect($('#pro-dialog').open, 'Lite: Pro-Hinweis erscheint zur Sekante');
+  $('#pro-dialog').close('cancel'); await tick();
+} else {
+  expect(!$('#secant-row').hidden, 'Pro: Sekantenregler erscheint');
+  const h = $('#secant-h');
+  h.value = '1.5';
+  h.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await tick();
+  expect($('#secant-value').textContent.includes('1,5') || $('#secant-value').textContent.includes('1.5'),
+         'Der Wert von h wird angezeigt');
+  expect($('#readout').textContent.length > 0, 'Der Differenzenquotient steht im Ablesefeld');
+  click('#btn-h-zero'); await tick();
+  click('#opt-secant'); await tick();
+  expect($('#secant-row').hidden, 'Ausgeschaltet verschwindet der Regler wieder');
+}
+
+// --- Tabelle und Graph verkoppeln ---
+click('#tab-btn-table'); await tick();
+click('#btn-gen-table'); await tick();
+{
+  const rows = $$('#values-table tbody tr');
+  expect(rows.length > 3, 'Wertetabelle ist gefuellt');
+  click(rows[2]); await tick();
+  expect($('#opt-trace').checked, 'Ein Tippen auf die Zeile schaltet das Verfolgen ein');
+  expect($$('#values-table tbody tr').filter(r => r.classList.contains('is-marked')).length === 1,
+         'Genau eine Zeile ist markiert');
+  expect(!$('#value-strip').hidden, 'Der Wertestreifen erscheint');
+  expect($('#value-strip').children.length === 5, 'Fuenf Werte im Streifen');
+  click('#opt-trace'); await tick();
+  expect($('#value-strip').hidden, 'Ohne Verfolgen kein Streifen');
+  expect($$('#values-table tbody tr').every(r => !r.classList.contains('is-marked')),
+         'Und keine markierte Zeile mehr');
+}
+click('#tab-btn-explorer'); await tick();
+
+// --- Ziehpunkte: der naechstliegende gewinnt ---
+{
+  const list = window.MFE.math.FUNCTIONS.linear.handles({ m: 1, b: 0 }, 0.05);
+  expect(list[1].x >= 2.5, 'Der Einheitspunkt rueckt bei grobem Massstab weiter weg');
+  const patch = list[1].set(list[1].x, 5.2);
+  expect(Math.abs(patch.m - 5.2 / list[1].x) < 1e-9, 'Die Steigung wird an der neuen Stelle richtig berechnet');
+  const nah = window.MFE.math.FUNCTIONS.linear.handles({ m: 1, b: 0 }, 0);
+  expect(nah[1].x === 1, 'Ohne Massstabsangabe bleibt es beim Einheitspunkt x = 1');
+}
+
+// --- Fehlvorstellungen: Ablenker und Diagnose ---
+{
+  const correct = { m: 2, b: 3 };
+  const dis = window.MFE.quiz.makeDistractors('linear', correct, 3);
+  expect(dis.length === 3, 'Drei Ablenker');
+  expect(dis.every(d => d.m !== correct.m || d.b !== correct.b), 'Kein Ablenker ist die richtige Antwort');
+  const texts = new Set(dis.map(d => window.MFE.quiz.eqText('linear', d)));
+  expect(texts.size === 3, 'Die Ablenker unterscheiden sich sichtbar voneinander');
+
+  const dg = window.MFE.quiz.diagnose('linear', { m: 2, b: -3 }, correct);
+  expect(dg.length > 0, 'Vorzeichenfehler wird benannt');
+  const swap = window.MFE.quiz.diagnose('linear', { m: 3, b: 2 }, correct);
+  expect(swap.length > 0, 'Vertauschung wird benannt');
+  expect(window.MFE.quiz.diagnose('linear', correct, correct) === '',
+         'Die richtige Antwort erzeugt keine Fehlermeldung');
+}
+
+// --- Ueben: zweiter Versuch und halbe Punkte ---
+click('#tab-btn-quiz'); await tick();
+{
+  const tiles = $$('#quiz-options .quiz-opt');
+  expect(tiles.length === 4, 'Vier Antwortkacheln');
+  expect(tiles.every(b => b.querySelector('.opt-shape')), 'Jede Kachel traegt eine Form');
+  expect(tiles.every(b => (b.getAttribute('aria-label') || '').length > 2),
+         'Jede Kachel hat eine vorlesbare Beschriftung');
+  click(tiles[0]); await tick();
+  if (!tiles[1].disabled) {
+    // Erster Versuch war falsch: es geht weiter.
+    expect($('#quiz-feedback').textContent.length > 0, 'Der erste Fehlversuch bringt einen Hinweis');
+    click($$('#quiz-options .quiz-opt').find(b => !b.disabled)); await tick();
+  }
+  expect($$('#quiz-options .quiz-opt').every(b => b.disabled), 'Nach dem zweiten Versuch ist gesperrt');
+  expect($('#quiz-total').textContent === '1', 'Genau eine Aufgabe gezaehlt');
+}
+
+// --- Wettkampf ---
+click('#quiz-modes [data-mode="race"]'); await tick();
+expect(!$('#mode-race').hidden, 'Wettkampf ist offen');
+expect($('#mode-match').hidden && $('#mode-build').hidden, 'Die anderen Modi sind zu');
+click('#btn-race-start'); await tick();
+expect(!$('#race-run').hidden, 'Der Wettkampf laeuft');
+expect($$('#race-options .quiz-opt').length === 4, 'Vier Kacheln im Wettkampf');
+expect($('#race-progress').textContent.length > 0, 'Der Fortschritt steht da');
+click($$('#race-options .quiz-opt')[0]); await tick();
+expect($$('#race-options .quiz-opt').every(b => b.disabled), 'Im Wettkampf gibt es keinen zweiten Versuch');
+expect($('#race-feedback').textContent.length > 0, 'Rueckmeldung auch im Wettkampf');
+click('#btn-race-stop'); await tick();
+expect($('#race-run').hidden, 'Abbrechen beendet den Wettkampf');
+expect(!$('#race-start-box').hidden, 'Danach steht der Startknopf wieder da');
+
+// Ein neuer Durchgang darf nicht mit dem Nachlauf des alten kollidieren.
+click('#btn-race-start'); await tick();
+click('#btn-race-stop'); await tick();
+click('#btn-race-start'); await tick();
+await new Promise(r => setTimeout(r, 60));
+expect($('#race-progress').textContent.includes('1'), 'Ein neuer Wettkampf beginnt bei Aufgabe 1');
+
+// Ein laufender Wettkampf darf beim Verlassen nicht weiterlaufen.
+click('#btn-home'); await tick();
+expect($('#race-run').hidden, 'Der Wettkampf endet beim Verlassen des Bildschirms');
+
+// --- Stand pro Funktionsklasse ---
+{
+  const prog = JSON.parse(window.localStorage.getItem('mfe:progress') || '{}');
+  expect(prog.linear && prog.linear.n > 0, 'Der Stand wird mitgeschrieben');
+  expect(prog.linear.ok <= prog.linear.n, 'Nie mehr richtige als gestellte Aufgaben');
+}
+
+click('.fn-card[data-category="linear"]'); await tick();
+click('#tab-btn-quiz'); await tick();
+click('#btn-progress-reset'); await tick();
+expect(window.localStorage.getItem('mfe:progress') === null, 'Der Stand laesst sich zuruecksetzen');
+click('#tab-btn-explorer'); await tick();
 
 // --- Tastaturbedienung und Beschreibung des Graphen ------------------------
 click('#btn-home'); await tick();
@@ -820,97 +1003,6 @@ expect(window.document.documentElement.dataset.screen === 'app', 'und wechselt m
   bar.hidden = false;
   expect(shown(bar), '#update-bar ohne hidden ist sichtbar');
   bar.hidden = true;
-}
-
-// --- Modus "Typische Fallen" ----------------------------------------------
-click('#btn-home'); await tick();
-click('.fn-card[data-category="linear"]'); await tick();
-click('#tab-btn-quiz'); await tick();
-{
-  const btn = $('#quiz-modes [data-mode="traps"]');
-  expect(btn, 'der Fallen-Modus steht zur Auswahl');
-  click(btn); await tick(); await tick();
-  if (LITE) {
-    expect($('#mode-traps').hidden, 'Lite: der Fallen-Modus bleibt gesperrt');
-    if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
-  } else {
-    expect(!$('#mode-traps').hidden, 'der Fallen-Modus ist offen');
-    expect($('#trap-prompt').textContent.length > 10, 'eine Frage steht da');
-    const opts = $$('#trap-options .quiz-opt');
-    expect(opts.length >= 2, `mindestens zwei Antworten (${opts.length})`);
-
-    // Bewusst falsch antworten: dann MUSS eine Erklaerung erscheinen.
-    let wrongClicked = false;
-    for (const o of opts) {
-      if (!o.classList.contains('is-correct')) { click(o); wrongClicked = true; break; }
-    }
-    await tick();
-    expect(wrongClicked, 'eine Antwort liess sich waehlen');
-    expect($$('#trap-options .quiz-opt.is-correct').length === 1, 'die richtige Antwort wird markiert');
-    const fb = $('#trap-feedback');
-    expect(fb.textContent.length > 20, 'es gibt eine ausfuehrliche Rueckmeldung');
-    expect(!!fb.querySelector('.why'), 'und eine benannte Erklaerung des Denkfehlers');
-    expect($('#trap-total').textContent === '1', 'die Aufgabe wird gezaehlt');
-
-    click('#btn-next-trap'); await tick();
-    expect($$('#trap-options .quiz-opt.is-correct').length === 0, 'die naechste Aufgabe ist wieder offen');
-  }
-}
-
-// --- Fehleranalyse im Nachbau-Modus ---------------------------------------
-if (!LITE) {
-  click($('#quiz-modes [data-mode="build"]')); await tick(); await tick();
-  expect(!$('#mode-build').hidden, 'Nachbau-Modus offen');
-  // Absichtlich das Vorzeichen von m drehen
-  const target = window.MFE.app.practiceTarget?.();
-  if (target) {
-    const slider = $('#pr-slider-m') || $('#pr-val-m');
-    const field = $('#pr-val-m');
-    field.value = String(-target.m);
-    field.dispatchEvent(new window.Event('change', { bubbles: true }));
-    await tick();
-    click('#btn-check'); await tick();
-    const items = $$('#practice-feedback .finding-list li');
-    expect(items.length > 0, 'die Auswertung nennt einzelne Befunde');
-    const txt = items.map(li => li.textContent).join(' ');
-    expect(/Vorzeichen|sign/i.test(txt) || /vertauscht|swapped/i.test(txt) || /zu hoch|zu niedrig|too/i.test(txt),
-           `der Befund ist benannt ("${txt.slice(0, 60)}")`);
-    expect($$('#practice-feedback .finding-list li.is-concept').length > 0
-        || items.length > 0, 'Denkfehler werden hervorgehoben');
-  }
-}
-
-// --- Darstellungswechsel ---------------------------------------------------
-if (!LITE) {
-  const Q = window.MFE.quiz;
-  for (const type of ['tableToEq', 'graphToTable', 'pointsToEq']) {
-    let task = null;
-    for (let i = 0; i < 40 && !task; i++) task = Q.randomTask?.(type, 'linear');
-    expect(!!task, `${type}: eine Zufallsaufgabe laesst sich bauen`);
-    if (task) {
-      const back = Q.sanitizeQuiz({ title: 'T', tasks: [task] });
-      expect(!!back, `${type}: die Aufgabe uebersteht die Pruefung`);
-      const code = Q.encodeQuiz(back);
-      const round = Q.decodeQuiz(code);
-      expect(round?.tasks?.[0]?.type === type, `${type}: uebersteht den Link`);
-    }
-  }
-  // Und einmal wirklich abspielen
-  const quiz = Q.sanitizeQuiz({
-    title: 'Darstellungswechsel',
-    tasks: [Q.randomTask('tableToEq', 'linear'), Q.randomTask('graphToTable', 'linear')].filter(Boolean)
-  });
-  if (quiz) {
-    Q.startQuiz(quiz); await tick();
-    expect($('#screen-play').classList.contains('is-active'), 'Darstellungswechsel-Quiz startet');
-    expect($('#play-body table'), 'die Wertetabelle wird angezeigt');
-    click($$('#play-body .quiz-opt')[0]); await tick();
-    click('#btn-play-next'); await tick();
-    expect($$('#play-body input').length === 3, 'drei Felder zum Eintragen der Werte');
-    click('#btn-play-check'); await tick();
-    expect($('#play-feedback').textContent.length > 0, 'die Werteaufgabe wird ausgewertet');
-    click('#btn-play-next'); await tick();
-  }
 }
 
 // Sprache umschalten

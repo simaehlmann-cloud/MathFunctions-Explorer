@@ -369,9 +369,12 @@ class Graph {
    * Bildpunkten ein Sprung liegt - sonst zoege eine Hyperbel eine senkrechte
    * Linie durch ihre Polstelle.
    */
-  plotFunction(f, v, color, { width = 3, dash = [], poles = [] } = {}) {
+  plotFunction(f, v, color, { width = 3, dash = [], poles = [], alpha = 1 } = {}) {
     const c = this.ctx;
     c.save();
+    // globalAlpha statt rgba-Farbe: die Farben kommen als Hex aus dem
+    // Stylesheet, und eine Umrechnung waere eine zweite Fehlerquelle.
+    if (alpha < 1) c.globalAlpha = clamp(alpha, 0, 1);
     c.strokeStyle = color; c.lineWidth = width * this.scale; c.setLineDash(dash.map(d => d * this.scale));
     c.lineJoin = 'round'; c.lineCap = 'round';
     c.beginPath();
@@ -418,11 +421,40 @@ function drawScene(g, scene) {
   // Hilfslinien nur fuer die aktive Kurve, sonst wird das Bild unlesbar.
   if (opts.helpers && activeDef?.helpers) activeDef.helpers(g, active.values, paramColor);
 
-  // Zielkurve im Nachbau-Modus liegt unter allem anderen
+  /* Spur (Kurvenschar): die zuletzt eingestellten Zustaende blass darunter.
+     Aeltere Eintraege stehen vorn und werden schwaecher gezeichnet, damit die
+     Bewegungsrichtung ablesbar bleibt. Zusaetzlich die Ortskurve - bei der
+     Parabel wandert der Scheitelpunkt sichtbar auf einer eigenen Bahn. */
+  if (Array.isArray(scene.trail) && scene.trail.length) {
+    const n = scene.trail.length;
+    scene.trail.forEach((entry, i) => {
+      const td = FUNCTIONS[entry.form];
+      if (!td) return;
+      const alpha = 0.14 + 0.26 * ((i + 1) / n);
+      g.plotFunction(td.f, entry.values, C(entry.color || '--graph'), {
+        width: 2, alpha,
+        poles: td.poles?.(entry.values, view.xMin, view.xMax) ?? []
+      });
+      if (scene.locus) {
+        const pt = td.vertex?.(entry.values);
+        if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) g.point(pt.x, pt.y, C('--p4'), 3.5);
+      }
+    });
+  }
+
+  // Zielkurve im Nachbau-Modus und festgehaltene Vergleichskurve liegen
+  // unter allem anderen
   if (scene.ghost) {
     const gd = FUNCTIONS[scene.ghost.form];
-    if (gd) g.plotFunction(gd.f, scene.ghost.values, C('--muted'),
-      { width: 6, dash: [10, 8], poles: gd.poles?.(scene.ghost.values, view.xMin, view.xMax) ?? [] });
+    if (gd) {
+      g.plotFunction(gd.f, scene.ghost.values, C('--muted'),
+        { width: 6, dash: [10, 8], poles: gd.poles?.(scene.ghost.values, view.xMin, view.xMax) ?? [] });
+      if (scene.ghostLabel) {
+        const xl = view.xMin + (view.xMax - view.xMin) * 0.12;
+        const y = gd.f(xl, scene.ghost.values);
+        if (Number.isFinite(y)) g.labelAt(xl, y, scene.ghostLabel, C('--muted'), 'above');
+      }
+    }
   }
 
   // Ableitung liegt unter der Funktion, damit die Funktion oben bleibt
@@ -488,6 +520,43 @@ function drawScene(g, scene) {
     }
   }
 
+  /* Sekante mit Steigungsdreieck.
+     Der Weg vom Differenzenquotienten zur Ableitung ist der Standardeinstieg
+     in Klasse 10/11: zwei Punkte, ein Dreieck, dann h gegen 0. Die Sekante
+     traegt bewusst die Farbe der Tangente - sie wird ja zu ihr - und ist nur
+     so lange gestrichelt, wie h nicht verschwindet. */
+  scene.secantInfo = null;
+  if (opts.secant && activeDef && Number.isFinite(scene.secantX) && Number.isFinite(scene.secantH)) {
+    const x0 = scene.secantX;
+    const h = scene.secantH;
+    const x1 = x0 + h;
+    const y0 = activeDef.f(x0, active.values);
+    const y1 = activeDef.f(x1, active.values);
+    const col = C('--tangent');
+    if (Number.isFinite(y0) && Number.isFinite(y1) && Math.abs(h) > 1e-12) {
+      const m = (y1 - y0) / h;
+      const span = g.xMax - g.xMin;
+      g.line(x0 - span, y0 - m * span, x0 + span, y0 + m * span, { color: col, width: 2, dash: [9, 6] });
+      // Steigungsdreieck: waagerecht \u0394x, senkrecht \u0394y
+      g.line(x0, y0, x1, y0, { color: col, width: 2 });
+      g.line(x1, y0, x1, y1, { color: col, width: 2 });
+      g.labelAt((x0 + x1) / 2, y0, `\u0394x = ${mfmt(h)}`, col, 'below');
+      g.labelAt(x1, (y0 + y1) / 2, `\u0394y = ${mfmt(y1 - y0)}`, col, h >= 0 ? 'right' : 'left');
+      g.point(x0, y0, col, 6);
+      g.point(x1, y1, col, 6);
+      scene.secantInfo = { x0, x1, y0, y1, h, m };
+    } else if (Number.isFinite(y0)) {
+      // h = 0: die Sekante gibt es nicht mehr, die Tangente uebernimmt.
+      const m = derivative(activeDef, active.values, x0, g.xMax - g.xMin);
+      if (Number.isFinite(m)) {
+        const span = g.xMax - g.xMin;
+        g.line(x0 - span, y0 - m * span, x0 + span, y0 + m * span, { color: col, width: 3 });
+        g.point(x0, y0, col, 7);
+        scene.secantInfo = { x0, x1: x0, y0, y1: y0, h: 0, m };
+      }
+    }
+  }
+
   // Trace: mit dem Finger am Graphen entlang
   scene.traceInfo = null;
   if (opts.trace && activeDef && Number.isFinite(scene.traceX)) {
@@ -503,7 +572,9 @@ function drawScene(g, scene) {
   }
 
   if (opts.drag && activeDef?.handles) {
-    for (const hd of activeDef.handles(active.values)) g.point(hd.x, hd.y, C('--accent'), 9);
+    // unitPerPx mitgeben: die Ziehpunkte legen ihren Abstand in Bildpunkten
+    // fest, nicht in Achseneinheiten (siehe gapU in functions.js).
+    for (const hd of activeDef.handles(active.values, g.unitPerPx)) g.point(hd.x, hd.y, C('--accent'), 9);
   }
   return scene.intersections;
 }

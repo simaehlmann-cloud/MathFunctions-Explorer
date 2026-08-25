@@ -103,20 +103,38 @@ const T = (text) => ({ text });
 const P = (id) => ({ param: id });
 const SUP = (text) => ({ sup: text });
 
+/* --------------------------------------------------------------------------
+   Abstand zwischen Ziehpunkten
+   handles() bekommt als zweites Argument die Groesse eines Bildpunktes in
+   Achseneinheiten (unitPerPx). Ziehpunkte, deren Stelle frei waehlbar ist -
+   der Einheitspunkt der Geraden, der Asymptotenpunkt der Exponentialkurve -
+   ruecken damit so weit auseinander, dass sie sich auch bei weit
+   herausgezoomter Ansicht nicht ueberlagern. Vorher lagen sie fest bei
+   x = 1 bzw. x = 2 und klebten bei grossem Ausschnitt aufeinander.
+
+   Wichtig: die Stelle geht in set() ein. Wer den Punkt bei x = k anfasst,
+   veraendert die Steigung um (ny - b) / k - nicht um (ny - b).
+   -------------------------------------------------------------------------- */
+const HANDLE_GAP_PX = 52;
+const gapU = (u, minUnits = 1) => Math.max(minUnits, (Number.isFinite(u) && u > 0 ? u : 0) * HANDLE_GAP_PX);
+
 const FUNCTIONS = {
   linear: {
     category: 'linear',
     params: [
-      { id: 'm', symbol: 'm', value: 1, min: -5, max: 5, step: 0.1, color: 1, desc: 'd.lin.m', pool: [-3, -2, -1, -0.5, 0.5, 1, 2, 3] },
-      { id: 'b', symbol: 'b', value: 0, min: -10, max: 10, step: 0.5, color: 2, desc: 'd.lin.b', pool: [-4, -3, -2, -1, 0, 1, 2, 3, 4] }
+      { id: 'm', symbol: 'm', value: 1, min: -5, max: 5, step: 0.1, color: 1, role: 'slope', desc: 'd.lin.m', pool: [-3, -2, -1, -0.5, 0.5, 1, 2, 3] },
+      { id: 'b', symbol: 'b', value: 0, min: -10, max: 10, step: 0.5, color: 2, role: 'shiftY', desc: 'd.lin.b', pool: [-4, -3, -2, -1, 0, 1, 2, 3, 4] }
     ],
     tokens: () => [P('m'), T(' \u00b7 x + '), P('b')],
     f: (x, v) => v.m * x + v.b,
     rhs: (v) => tidy(`${coef(v.m)}x ${term(v.b)}`),
-    handles: (v) => [
-      { x: 0, y: v.b, hint: 'poi.yint', set: (nx, ny) => ({ b: ny }) },
-      { x: 1, y: v.m + v.b, hint: 'd.lin.m', set: (nx, ny) => ({ m: ny - v.b }) }
-    ],
+    handles: (v, u) => {
+      const k = gapU(u);
+      return [
+        { x: 0, y: v.b, hint: 'poi.yint', set: (nx, ny) => ({ b: ny }) },
+        { x: k, y: v.m * k + v.b, hint: 'd.lin.m', set: (nx, ny) => ({ m: (ny - v.b) / k }) }
+      ];
+    },
     helpers: (g, v, col) => {
       g.line(0, v.b, 1, v.b, { color: col(1), dash: [5, 4] });
       g.line(1, v.b, 1, v.b + v.m, { color: col(1), dash: [5, 4] });
@@ -129,9 +147,9 @@ const FUNCTIONS = {
   quad_standard: {
     category: 'quadratic',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -3, max: 3, step: 0.1, color: 1, desc: 'd.q.a', pool: [-2, -1, -0.5, 0.5, 1, 2] },
-      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.q.b', pool: [-4, -2, -1, 0, 1, 2, 4] },
-      { id: 'c', symbol: 'c', value: 0, min: -10, max: 10, step: 0.5, color: 3, desc: 'd.q.c', pool: [-3, -1, 0, 1, 3] }
+      { id: 'a', symbol: 'a', value: 1, min: -3, max: 3, step: 0.1, color: 1, role: 'stretch', desc: 'd.q.a', pool: [-2, -1, -0.5, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, role: 'coef', desc: 'd.q.b', pool: [-4, -2, -1, 0, 1, 2, 4] },
+      { id: 'c', symbol: 'c', value: 0, min: -10, max: 10, step: 0.5, color: 3, role: 'shiftY', desc: 'd.q.c', pool: [-3, -1, 0, 1, 3] }
     ],
     tokens: () => [P('a'), T(' \u00b7 x'), SUP('2'), T(' + '), P('b'), T(' \u00b7 x + '), P('c')],
     f: (x, v) => v.a * x * x + v.b * x + v.c,
@@ -147,13 +165,11 @@ const FUNCTIONS = {
   },
 
   quad_vertex: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['d'],
     category: 'quadratic',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -3, max: 3, step: 0.1, color: 1, desc: 'd.q.a', pool: [-2, -1, -0.5, 0.5, 1, 2] },
-      { id: 'd', symbol: 'd', value: 2, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.q.d', pool: [-3, -2, -1, 0, 1, 2, 3] },
-      { id: 'e', symbol: 'e', value: -1, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.q.e', pool: [-3, -2, -1, 0, 1, 2, 3] }
+      { id: 'a', symbol: 'a', value: 1, min: -3, max: 3, step: 0.1, color: 1, role: 'stretch', desc: 'd.q.a', pool: [-2, -1, -0.5, 0.5, 1, 2] },
+      { id: 'd', symbol: 'd', value: 2, min: -8, max: 8, step: 0.5, color: 2, role: 'shiftX', desc: 'd.q.d', pool: [-3, -2, -1, 0, 1, 2, 3] },
+      { id: 'e', symbol: 'e', value: -1, min: -8, max: 8, step: 0.5, color: 3, role: 'shiftY', desc: 'd.q.e', pool: [-3, -2, -1, 0, 1, 2, 3] }
     ],
     tokens: () => [P('a'), T(' \u00b7 (x \u2212 '), P('d'), T(')'), SUP('2'), T(' + '), P('e')],
     f: (x, v) => v.a * (x - v.d) ** 2 + v.e,
@@ -172,9 +188,9 @@ const FUNCTIONS = {
   quad_factored: {
     category: 'quadratic',
     params: [
-      { id: 'a',  symbol: 'a',  value: 1,  min: -3, max: 3, step: 0.1, color: 1, desc: 'd.q.a',  pool: [-2, -1, -0.5, 0.5, 1, 2] },
-      { id: 'x1', symbol: 'x1', value: -1, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.q.x1', pool: [-4, -3, -2, -1, 0] },
-      { id: 'x2', symbol: 'x2', value: 3,  min: -8, max: 8, step: 0.5, color: 3, desc: 'd.q.x2', pool: [0, 1, 2, 3, 4] }
+      { id: 'a',  symbol: 'a',  value: 1,  min: -3, max: 3, step: 0.1, color: 1, role: 'stretch', desc: 'd.q.a',  pool: [-2, -1, -0.5, 0.5, 1, 2] },
+      { id: 'x1', symbol: 'x1', value: -1, min: -8, max: 8, step: 0.5, color: 2, role: 'root', desc: 'd.q.x1', pool: [-4, -3, -2, -1, 0] },
+      { id: 'x2', symbol: 'x2', value: 3,  min: -8, max: 8, step: 0.5, color: 3, role: 'root', desc: 'd.q.x2', pool: [0, 1, 2, 3, 4] }
     ],
     tokens: () => [P('a'), T(' \u00b7 (x \u2212 '), P('x1'), T(') \u00b7 (x \u2212 '), P('x2'), T(')')],
     f: (x, v) => v.a * (x - v.x1) * (x - v.x2),
@@ -195,19 +211,19 @@ const FUNCTIONS = {
   exponential: {
     category: 'exponential',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -5,  max: 5,  step: 0.1,  color: 1, desc: 'd.exp.a', pool: [-2, -1, 0.5, 1, 2, 3] },
+      { id: 'a', symbol: 'a', value: 1, min: -5,  max: 5,  step: 0.1,  color: 1, role: 'stretch', desc: 'd.exp.a', pool: [-2, -1, 0.5, 1, 2, 3] },
       /* Eigene Grenzen pro Parameter: die Basis darf nicht durch 0 ins
          Negative laufen, dort ist b^x nicht definiert. */
-      { id: 'b', symbol: 'b', value: 2, min: 0.1, max: 4,  step: 0.05, color: 2, desc: 'd.exp.b', hardMin: 0.001, pool: [0.5, 0.8, 1.5, 2, 3] },
-      { id: 'c', symbol: 'c', value: 0, min: -10, max: 10, step: 0.5,  color: 3, desc: 'd.exp.c', pool: [-2, 0, 1, 2] }
+      { id: 'b', symbol: 'b', value: 2, min: 0.1, max: 4,  step: 0.05, color: 2, role: 'base', desc: 'd.exp.b', hardMin: 0.001, pool: [0.5, 0.8, 1.5, 2, 3] },
+      { id: 'c', symbol: 'c', value: 0, min: -10, max: 10, step: 0.5,  color: 3, role: 'shiftY', desc: 'd.exp.c', pool: [-2, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 '), P('b'), SUP('x'), T(' + '), P('c')],
     f: (x, v) => (v.b > 0 ? v.a * v.b ** x + v.c : NaN),
     rhs: (v) => tidy(`${coef(v.a)}${mfmt(v.b)}^x ${term(v.c)}`),
     asymptote: (v) => v.c,
-    handles: (v) => [
+    handles: (v, u) => [
       { x: 0, y: v.a + v.c, hint: 'd.exp.a', set: (nx, ny) => ({ a: ny - v.c }) },
-      { x: 2, y: v.c, hint: 'poi.asymptote', set: (nx, ny) => ({ c: ny }) }
+      { x: gapU(u, 2), y: v.c, hint: 'poi.asymptote', set: (nx, ny) => ({ c: ny }) }
     ],
     helpers: (g, v, col) => {
       g.line(g.xMin, v.c, g.xMax, v.c, { color: col(3), dash: [8, 5] });
@@ -217,15 +233,13 @@ const FUNCTIONS = {
   },
 
   sinus: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['c'],
     category: 'trig',
     piAxis: true,                       // x-Achse standardmaessig in pi-Schritten
     params: [
-      { id: 'a', symbol: 'a', value: 2, min: -5, max: 5, step: 0.1, color: 1, desc: 'd.sin.a', pool: [-2, -1, 0.5, 1, 2, 3] },
-      { id: 'b', symbol: 'b', value: 1, min: 0.1, max: 5, step: 0.1, color: 2, desc: 'd.sin.b', hardMin: 0.001, pool: [0.5, 1, 2, 3] },
-      { id: 'c', symbol: 'c', value: 0, min: -6.5, max: 6.5, step: 0.1, color: 3, desc: 'd.sin.c', pool: [0, 1, -1, 1.5707963] },
-      { id: 'd', symbol: 'd', value: 0, min: -5, max: 5, step: 0.5, color: 4, desc: 'd.sin.d', pool: [-2, -1, 0, 1, 2] }
+      { id: 'a', symbol: 'a', value: 2, min: -5, max: 5, step: 0.1, color: 1, role: 'stretch', desc: 'd.sin.a', pool: [-2, -1, 0.5, 1, 2, 3] },
+      { id: 'b', symbol: 'b', value: 1, min: 0.1, max: 5, step: 0.1, color: 2, role: 'freq', desc: 'd.sin.b', hardMin: 0.001, pool: [0.5, 1, 2, 3] },
+      { id: 'c', symbol: 'c', value: 0, min: -6.5, max: 6.5, step: 0.1, color: 3, role: 'shiftX', desc: 'd.sin.c', pool: [0, 1, -1, 1.5707963] },
+      { id: 'd', symbol: 'd', value: 0, min: -5, max: 5, step: 0.5, color: 4, role: 'shiftY', desc: 'd.sin.d', pool: [-2, -1, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 sin('), P('b'), T(' \u00b7 (x \u2212 '), P('c'), T(')) + '), P('d')],
     f: (x, v) => v.a * Math.sin(v.b * (x - v.c)) + v.d,
@@ -242,15 +256,13 @@ const FUNCTIONS = {
   },
 
   tangens: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['c'],
     category: 'trig',
     piAxis: true,
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.tan.a', pool: [-2, -1, 0.5, 1, 2] },
-      { id: 'b', symbol: 'b', value: 1, min: 0.25, max: 4, step: 0.25, color: 2, desc: 'd.tan.b', hardMin: 0.05, pool: [0.5, 1, 2] },
-      { id: 'c', symbol: 'c', value: 0, min: -Math.PI, max: Math.PI, step: Math.PI / 12, color: 3, desc: 'd.tan.c', pool: [0, Math.PI / 4, Math.PI / 2] },
-      { id: 'd', symbol: 'd', value: 0, min: -4, max: 4, step: 0.25, color: 4, desc: 'd.tan.d', pool: [-1, 0, 1] }
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, role: 'stretch', desc: 'd.tan.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 1, min: 0.25, max: 4, step: 0.25, color: 2, role: 'freq', desc: 'd.tan.b', hardMin: 0.05, pool: [0.5, 1, 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -Math.PI, max: Math.PI, step: Math.PI / 12, color: 3, role: 'shiftX', desc: 'd.tan.c', pool: [0, Math.PI / 4, Math.PI / 2] },
+      { id: 'd', symbol: 'd', value: 0, min: -4, max: 4, step: 0.25, color: 4, role: 'shiftY', desc: 'd.tan.d', pool: [-1, 0, 1] }
     ],
     tokens: () => [P('a'), T(' \u00b7 tan('), P('b'), T(' \u00b7 (x \u2212 '), P('c'), T(')) + '), P('d')],
     f: (x, v) => {
@@ -293,10 +305,10 @@ const FUNCTIONS = {
   cubic: {
     category: 'polynomial',
     params: [
-      { id: 'a', symbol: 'a', value: 0.2, min: -2, max: 2,  step: 0.05, color: 1, desc: 'd.cub.a', pool: [-1, -0.5, 0.25, 0.5, 1] },
-      { id: 'b', symbol: 'b', value: 0,   min: -4, max: 4,  step: 0.1,  color: 2, desc: 'd.cub.b', pool: [-2, -1, 0, 1, 2] },
-      { id: 'c', symbol: 'c', value: -2,  min: -8, max: 8,  step: 0.1,  color: 3, desc: 'd.cub.c', pool: [-3, -1, 0, 1, 3] },
-      { id: 'd', symbol: 'd', value: 0,   min: -8, max: 8,  step: 0.5,  color: 4, desc: 'd.cub.d', pool: [-2, 0, 1, 2] }
+      { id: 'a', symbol: 'a', value: 0.2, min: -2, max: 2,  step: 0.05, color: 1, role: 'stretch', desc: 'd.cub.a', pool: [-1, -0.5, 0.25, 0.5, 1] },
+      { id: 'b', symbol: 'b', value: 0,   min: -4, max: 4,  step: 0.1,  color: 2, role: 'coef', desc: 'd.cub.b', pool: [-2, -1, 0, 1, 2] },
+      { id: 'c', symbol: 'c', value: -2,  min: -8, max: 8,  step: 0.1,  color: 3, role: 'coef', desc: 'd.cub.c', pool: [-3, -1, 0, 1, 3] },
+      { id: 'd', symbol: 'd', value: 0,   min: -8, max: 8,  step: 0.5,  color: 4, role: 'shiftY', desc: 'd.cub.d', pool: [-2, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 x'), SUP('3'), T(' + '), P('b'), T(' \u00b7 x'), SUP('2'), T(' + '), P('c'), T(' \u00b7 x + '), P('d')],
     f: (x, v) => ((v.a * x + v.b) * x + v.c) * x + v.d,      // Horner: stabiler bei grossen x
@@ -317,13 +329,11 @@ const FUNCTIONS = {
   },
 
   root: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['b'],
     category: 'root',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.root.a', pool: [-2, -1, 0.5, 1, 2] },
-      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.root.b', pool: [-2, -1, 0, 1, 2] },
-      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.root.c', pool: [-2, -1, 0, 1, 2] }
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, role: 'stretch', desc: 'd.root.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, role: 'shiftX', desc: 'd.root.b', pool: [-2, -1, 0, 1, 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, role: 'shiftY', desc: 'd.root.c', pool: [-2, -1, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 \u221a(x \u2212 '), P('b'), T(') + '), P('c')],
     // Links von b ist die Wurzel nicht definiert - NaN, nicht 0.
@@ -339,13 +349,11 @@ const FUNCTIONS = {
   },
 
   absolute: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['b'],
     category: 'absolute',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.abs.a', pool: [-2, -1, 0.5, 1, 2] },
-      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.abs.b', pool: [-3, -1, 0, 1, 3] },
-      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.abs.c', pool: [-2, -1, 0, 1, 2] }
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, role: 'stretch', desc: 'd.abs.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, role: 'shiftX', desc: 'd.abs.b', pool: [-3, -1, 0, 1, 3] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, role: 'shiftY', desc: 'd.abs.c', pool: [-2, -1, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 |x \u2212 '), P('b'), T('| + '), P('c')],
     f: (x, v) => v.a * Math.abs(x - v.b) + v.c,
@@ -359,13 +367,11 @@ const FUNCTIONS = {
   },
 
   logarithm: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['b'],
     category: 'logarithm',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, desc: 'd.log.a', pool: [-2, -1, 0.5, 1, 2] },
-      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.log.b', pool: [-2, -1, 0, 1] },
-      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.log.c', pool: [-2, -1, 0, 1, 2] }
+      { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, role: 'stretch', desc: 'd.log.a', pool: [-2, -1, 0.5, 1, 2] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, role: 'shiftX', desc: 'd.log.b', pool: [-2, -1, 0, 1] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, role: 'shiftY', desc: 'd.log.c', pool: [-2, -1, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 ln(x \u2212 '), P('b'), T(') + '), P('c')],
     f: (x, v) => (x <= v.b ? NaN : v.a * Math.log(x - v.b) + v.c),
@@ -381,13 +387,11 @@ const FUNCTIONS = {
   },
 
   rational: {
-    /* Parameter in der Form (x \u2212 p): fuer die Fehleranalyse. */
-    shiftParams: ['b'],
     category: 'rational',
     params: [
-      { id: 'a', symbol: 'a', value: 1, min: -6, max: 6, step: 0.1, color: 1, desc: 'd.rat.a', pool: [-3, -2, -1, 1, 2, 3] },
-      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, desc: 'd.rat.b', pool: [-2, -1, 0, 1, 2] },
-      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, desc: 'd.rat.c', pool: [-2, -1, 0, 1, 2] }
+      { id: 'a', symbol: 'a', value: 1, min: -6, max: 6, step: 0.1, color: 1, role: 'stretch', desc: 'd.rat.a', pool: [-3, -2, -1, 1, 2, 3] },
+      { id: 'b', symbol: 'b', value: 0, min: -8, max: 8, step: 0.5, color: 2, role: 'shiftX', desc: 'd.rat.b', pool: [-2, -1, 0, 1, 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -8, max: 8, step: 0.5, color: 3, role: 'shiftY', desc: 'd.rat.c', pool: [-2, -1, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' / (x \u2212 '), P('b'), T(') + '), P('c')],
     // Exakt an der Polstelle ist der Wert nicht definiert; +-Infinity waere
@@ -419,19 +423,6 @@ const CATEGORY_FORMS = {
   rational: ['rational']
 };
 
-/**
- * Toleranz beim Pruefen einer Antwort - an EINER Stelle, damit Quiz,
- * Nachbau-Modus und Fehleranalyse dieselbe Schwelle verwenden.
- *
- * Frueher lagen hier drei Kopien mit je 2 % relativ. Bei einer
- * Wachstumsaufgabe mit y = 1000 hiess das eine erlaubte Abweichung von 20 -
- * da rutschte Falsches durch. Jetzt 1 %, und der absolute Sockel bindet an
- * die Schrittweite des Reglers: ein Wert, den man mit dem Regler gar nicht
- * genauer treffen kann, darf nicht als falsch gelten.
- */
-const tolerance = (target, step = 0) =>
-  Math.max(step * 1.01, Math.abs(Number(target) || 0) * 0.01, 0.02);
-
 return { clamp, fmt, mfmt, coef, term, bracket, bracketPi, termCoef, tidy,
-         piLabel, parseLoose, tolerance, FUNCTIONS, CATEGORY_FORMS };
+         piLabel, parseLoose, FUNCTIONS, CATEGORY_FORMS };
 })();
