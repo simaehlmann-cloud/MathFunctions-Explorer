@@ -867,6 +867,85 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 #screen-app.is-split .tab-btn[aria-disabled="true"] { opacity: .5; }
 
 /* ==========================================================================
+   Ergaenzungen v6.6
+   Konkreter Term, Wertestreifen, Sekantenregler, Wettkampf, Antwortkacheln
+   ========================================================================== */
+
+/* --- Zweite Zeile in der Gleichung: der Term mit Zahlen --- */
+.equation-value {
+  font-family: var(--ff-math);
+  font-size: .98rem;
+  color: var(--muted);
+  padding: .1rem .4rem .25rem;
+  font-variant-numeric: tabular-nums;
+}
+.equations .equation-value.is-active { color: var(--text); }
+
+/* --- Wertestreifen unter dem Koordinatensystem ---
+   Drei Zeilen, waagerecht: davor, aktueller Punkt, danach. Am Telefon im
+   Querformat ist das die einzige Darstellung der Wertetabelle, die passt. */
+.value-strip {
+  display: flex; gap: .35rem; align-items: stretch;
+  margin-top: .35rem; padding: .3rem;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums; font-size: .82rem;
+  overflow-x: auto;
+}
+.value-strip .vs-cell {
+  flex: 1 0 auto; min-width: 5.2rem; padding: .2rem .4rem;
+  border-radius: 6px; text-align: center; color: var(--muted);
+}
+.value-strip .vs-cell.is-current {
+  background: var(--surface); color: var(--text); font-weight: 700;
+  outline: 2px solid var(--trace);
+}
+.value-strip .vs-x { display: block; font-family: var(--ff-math); }
+.value-strip .vs-y { display: block; }
+
+/* --- Sekantenregler --- */
+.secant-row { display: grid; gap: .4rem; margin: .6rem 0; }
+.secant-row label { font-weight: 650; font-size: .9rem; }
+.secant-row input[type="range"] { min-height: 40px; margin: 0; }
+.secant-value { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--tangent); }
+
+/* --- Markierte Zeile in der Wertetabelle --- */
+#values-table tbody tr { cursor: pointer; }
+#values-table tbody tr.is-marked { outline: 2px solid var(--trace); background: var(--surface-2); }
+
+/* --- Antwortkacheln mit Form: Farbe traegt die Information nie allein ---
+   Eigene Palette, damit die Kachelfarben nicht mit den Parameterfarben
+   c1..c4 verwechselt werden. Die Form ist das eigentliche Merkmal. */
+:root {
+  --opt1: #1d4ed8; --opt2: #b91c1c; --opt3: #047857; --opt4: #b45309;
+}
+:root[data-theme="dark"] {
+  --opt1: #93c5fd; --opt2: #fca5a5; --opt3: #6ee7b7; --opt4: #fcd34d;
+}
+.quiz-opt { display: flex; align-items: center; gap: .6rem; }
+.opt-shape {
+  flex: 0 0 auto; width: 1.7rem; height: 1.7rem;
+  display: grid; place-items: center;
+  font-size: 1rem; line-height: 1; color: var(--on-accent);
+  border-radius: 6px; background: var(--shape-color, var(--accent));
+}
+.quiz-opt .opt-text { flex: 1 1 auto; }
+.quiz-opt.is-tried { opacity: .55; }
+
+/* --- Wettkampf --- */
+.race-bar { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: baseline; margin-bottom: .5rem; }
+.race-clock { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-bottom: .75rem; }
+.race-clock-fill { height: 100%; width: 100%; background: var(--accent); }
+.race-clock-fill.is-low { background: var(--err-text); }
+.race-result { font-family: var(--ff-math); font-size: 1.4rem; margin-bottom: .35rem; }
+.race-code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 1.5rem; font-weight: 700; letter-spacing: .12em; text-align: center;
+  padding: .6rem; background: var(--surface-2); border-radius: var(--radius-sm);
+}
+#race-start-box { display: grid; gap: .75rem; justify-items: start; }
+
+/* ==========================================================================
    [hidden] muss gewinnen
    --------------------------------------------------------------------------
    FEHLER, den das gekostet hat: Die Browser-Regel [hidden] { display: none }
@@ -887,14 +966,3 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
    "verborgen" darf von nichts uebersteuert werden.
    ========================================================================== */
 [hidden] { display: none !important; }
-
-/* --- Fehleranalyse und Darstellungswechsel -------------------------------- */
-.finding-list { display: grid; gap: .3rem; margin: .45rem 0 0; padding-left: 1.1rem; }
-.finding-list li { font-weight: 500; }
-/* Ein Denkfehler ist etwas anderes als "knapp daneben" - das soll man sehen. */
-.finding-list li.is-concept { font-weight: 650; }
-.finding-list li.is-close { opacity: .75; }
-.feedback .why { margin: .4rem 0 0; font-weight: 500; line-height: 1.5; }
-.answer-pair.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
-.table-wrapper.compact { max-height: 14rem; overflow: auto; margin-bottom: .6rem; }
-.table-wrapper.compact table { font-size: .92rem; }

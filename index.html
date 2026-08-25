@@ -180,6 +180,11 @@
         <p id="graph-desc" class="sr-only" aria-live="polite"></p>
         <output id="readout" class="readout" aria-live="polite"></output>
 
+        <!-- Schmaler Wertestreifen: zeigt die Umgebung des verfolgten Punktes.
+             Am Telefon im Querformat ist fuer die Wertetabelle kein Platz -
+             drei Zeilen neben dem Graphen passen dagegen immer. -->
+        <div id="value-strip" class="value-strip" hidden data-i18n-aria="a11y.valueStrip"></div>
+
         <!-- Zoomen geht auch mit zwei Fingern, Mausrad und Doppeltipp.
              Die Knoepfe sind fuer alle Faelle, in denen das nicht geht. -->
         <div class="canvas-tools">
@@ -218,8 +223,27 @@
           <label class="chip"><input type="checkbox" id="opt-derivative"><span data-i18n="opt.derivative">Ableitung f′</span></label>
           <label class="chip"><input type="checkbox" id="opt-tangent"><span data-i18n="opt.tangent">Tangente</span></label>
           <label class="chip"><input type="checkbox" id="opt-trace"><span data-i18n="opt.trace">Punkt verfolgen</span></label>
+          <label class="chip"><input type="checkbox" id="opt-secant"><span data-i18n="opt.secant">Sekante (Differenzenquotient)</span></label>
+          <label class="chip"><input type="checkbox" id="opt-trail"><span data-i18n="opt.trail">Spur beim Ziehen</span></label>
+          <label class="chip"><input type="checkbox" id="opt-locus"><span data-i18n="opt.locus">Ortskurve</span></label>
+          <label class="chip"><input type="checkbox" id="opt-showTerm" checked><span data-i18n="opt.showTerm">Term mit Zahlen zeigen</span></label>
           <!-- Nur sichtbar, wenn der Bildschirm breit genug ist. -->
           <label class="chip" id="chip-split" hidden><input type="checkbox" id="opt-split" checked><span data-i18n="opt.split">Wertetabelle daneben</span></label>
+        </div>
+
+        <!-- Sekante: Stelle kommt aus dem Koordinatensystem (derselbe Punkt
+             wie bei der Tangente), der Abstand h aus diesem Regler. -->
+        <div id="secant-row" class="secant-row" hidden>
+          <label for="secant-h" data-i18n="lbl.secantH">Abstand h</label>
+          <input type="range" id="secant-h" min="-4" max="4" step="0.05" value="2">
+          <output id="secant-value" class="secant-value"></output>
+          <button id="btn-h-zero" class="btn-ghost" type="button" data-i18n="btn.hZero">h → 0 abspielen</button>
+          <p class="hint" data-i18n="hint.secant">Ziehe den Punkt im Koordinatensystem, verändere h und sieh zu, wie die Sekante zur Tangente wird.</p>
+        </div>
+
+        <div class="action-row">
+          <button id="btn-freeze" class="btn-ghost" type="button" data-i18n="btn.freeze">Kurve festhalten</button>
+          <button id="btn-clear-trail" class="btn-ghost" type="button" hidden data-i18n="btn.clearTrail">Spur löschen</button>
         </div>
       </details>
 
@@ -291,7 +315,7 @@
     <div id="quiz-modes" class="segmented" role="group">
       <button class="seg-btn is-active" type="button" data-mode="match" aria-pressed="true" data-i18n="quiz.mode.match">Zuordnen</button>
       <button class="seg-btn" type="button" data-mode="build" aria-pressed="false" data-i18n="quiz.mode.build">Nachbauen</button>
-      <button class="seg-btn" type="button" data-mode="traps" aria-pressed="false" data-i18n="quiz.mode.traps">Typische Fallen</button>
+      <button class="seg-btn" type="button" data-mode="race" aria-pressed="false" data-i18n="quiz.mode.race">Wettkampf</button>
     </div>
 
     <!-- Modus 1: Gleichung dem Graphen zuordnen -->
@@ -333,27 +357,52 @@
       </div>
     </div>
 
-    <!-- Modus 3: Fragen, deren falsche Antworten typischen Denkfehlern
-         entsprechen. Wer danebengreift, bekommt keine Fehlermeldung, sondern
-         die Erklärung, was er sich vermutlich gedacht hat. -->
-    <div id="mode-traps" hidden>
+    <!-- Modus 3: Wettkampf. Bewusst nur mit Zuordnungsaufgaben - bei
+         Aufgaben, die Nachdenken verlangen, belohnt eine Uhr das Raten. -->
+    <div id="mode-race" hidden>
       <div class="quiz-head">
-        <h2 data-i18n="traps.title">Achtung, hier wird oft falsch gedacht.</h2>
-        <p class="quiz-score"><span data-i18n="quiz.score">Punkte</span>:
-          <strong id="trap-score">0</strong> / <span id="trap-total">0</span></p>
+        <h2 data-i18n="race.lead">Zehn Aufgaben, Zeit läuft mit. Schnell erkannt gibt mehr Punkte.</h2>
       </div>
-      <div class="quiz-body">
-        <canvas id="trap-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
-        <div>
-          <p id="trap-prompt" class="play-prompt"></p>
-          <div id="trap-options" class="options-grid"></div>
-          <p id="trap-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+      <div id="race-start-box">
+        <p id="race-best" class="quiz-meta"></p>
+        <p class="hint" data-i18n="race.slowDown">Im Wettkampf zählt Tempo. Zum Verstehen ist der Modus „Zuordnen“ der bessere Ort.</p>
+        <button id="btn-race-start" class="btn-primary" type="button" data-i18n="race.start">Wettkampf starten</button>
+      </div>
+
+      <div id="race-run" hidden>
+        <div class="race-bar">
+          <p id="race-progress" class="quiz-meta"></p>
+          <p class="quiz-meta"><span data-i18n="race.streak">Serie</span>: <strong id="race-streak">0</strong></p>
+          <p class="quiz-score"><span data-i18n="race.points">Punkte</span>: <strong id="race-points">0</strong></p>
+        </div>
+        <div class="race-clock"><div id="race-clock-fill" class="race-clock-fill"></div></div>
+        <div class="quiz-body">
+          <canvas id="race-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+          <div>
+            <div id="race-options" class="options-grid"></div>
+            <p id="race-feedback" class="feedback" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+        <button id="btn-race-stop" class="btn-ghost" type="button" data-i18n="race.stop">Abbrechen</button>
+      </div>
+
+      <div id="race-summary" hidden>
+        <h3 id="race-result" class="race-result"></h3>
+        <p id="race-best-note" class="quiz-meta"></p>
+        <div class="action-row">
+          <button id="btn-race-again" class="btn-primary" type="button" data-i18n="race.again">Noch einmal</button>
+          <button id="btn-race-code" class="btn-secondary" type="button" data-i18n="race.showCode">Ergebnis zeigen</button>
         </div>
       </div>
-      <div class="action-row">
-        <button id="btn-next-trap" class="btn-primary" type="button" data-i18n="btn.nextQuiz">Nächste Aufgabe</button>
-      </div>
     </div>
+
+    <!-- Stand pro Funktionsklasse. Sagt mehr als eine Punktzahl je Sitzung. -->
+    <details class="panel-section" id="progress-box">
+      <summary data-i18n="quiz.progressTitle">Dein Stand</summary>
+      <ul id="progress-list" class="info-list"></ul>
+      <button id="btn-progress-reset" class="btn-ghost" type="button" data-i18n="quiz.reset">Stand zurücksetzen</button>
+    </details>
   </section>
 </div>
 
@@ -539,6 +588,23 @@
   </div>
 </dialog>
 
+<!-- ====================== ERGEBNIS DES WETTKAMPFS ======================
+     Der Code steht nur auf dem Geraet. Er wird gezeigt oder abgescannt -
+     gesendet wird nichts. Die Pruefziffer schuetzt gegen Vertipper, nicht
+     gegen Absicht; das ist im Klassenraum die richtige Groessenordnung. -->
+<dialog id="race-dialog" class="dialog">
+  <div class="dialog-inner">
+    <h3 data-i18n="race.codeTitle">Dein Ergebnis</h3>
+    <p id="race-code" class="race-code"></p>
+    <p class="hint" data-i18n="race.codeHint">Zeige den Code der Lehrkraft oder lass ihn abscannen. Der Code steht nur auf diesem Gerät; es wird nichts gesendet.</p>
+    <div class="qr-wrap"><canvas id="race-qr" role="img" data-i18n-aria="race.codeTitle"></canvas></div>
+    <menu class="dialog-actions">
+      <button id="btn-race-copy" class="btn-secondary" type="button" data-i18n="race.codeCopy">Code kopieren</button>
+      <button id="btn-race-close" class="btn-primary" type="button" data-i18n="btn.close">Schließen</button>
+    </menu>
+  </div>
+</dialog>
+
 <!-- Hinweis auf eine neue Fassung. Die Übernahme geschieht erst auf Klick,
      damit nicht mitten in der Arbeit neu geladen wird. -->
 <div id="update-bar" class="update-bar" role="status" hidden>
@@ -570,7 +636,6 @@
 <script src="js/i18n.js"></script>
 <script src="js/functions.js"></script>
 <script src="js/graph.js"></script>
-<script src="js/diagnose.js"></script>
 <script src="js/nav.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/qr.js"></script>
