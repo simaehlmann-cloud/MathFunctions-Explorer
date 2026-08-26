@@ -983,3 +983,14 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   line-height: 1.45;
 }
+
+/* --- Ausschnitt-Bedienung am Quiz-Graphen ---
+   Liegt auf dem Bild, nicht darunter: darunter waere sie am Telefon im
+   Querformat aus dem sichtbaren Bereich gerutscht. */
+.canvas-with-view { position: relative; }
+.canvas-with-view .view-mini {
+  position: absolute; right: .4rem; bottom: .4rem;
+  display: flex; flex-direction: column; gap: .25rem;
+}
+.view-mini .map-btn { opacity: .9; }
+.view-mini .map-btn:hover, .view-mini .map-btn:focus-visible { opacity: 1; }

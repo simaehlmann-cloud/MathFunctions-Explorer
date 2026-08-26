@@ -327,7 +327,14 @@
           <strong id="quiz-score">0</strong> / <span id="quiz-total">0</span></p>
       </div>
       <div class="quiz-body">
-        <canvas id="quiz-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+        <div class="canvas-with-view">
+          <canvas id="quiz-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+          <div class="view-mini" data-mode="match">
+            <button class="map-btn" type="button" data-act="in"   data-i18n-title="btn.zoomIn"    data-i18n-aria="btn.zoomIn">+</button>
+            <button class="map-btn" type="button" data-act="out"  data-i18n-title="btn.zoomOut"   data-i18n-aria="btn.zoomOut">−</button>
+            <button class="map-btn" type="button" data-act="home" data-i18n-title="btn.resetView" data-i18n-aria="btn.resetView">⌂</button>
+          </div>
+        </div>
         <div>
           <div id="quiz-options" class="options-grid"></div>
           <p id="quiz-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -346,7 +353,14 @@
         <h2 data-i18n="build.title">Stelle die Regler so ein, dass dein Graph den grauen trifft.</h2>
       </div>
       <div class="quiz-body">
-        <canvas id="practice-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.practiceCanvas"></canvas>
+        <div class="canvas-with-view">
+          <canvas id="practice-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.practiceCanvas"></canvas>
+          <div class="view-mini" data-mode="build">
+            <button class="map-btn" type="button" data-act="in"   data-i18n-title="btn.zoomIn"    data-i18n-aria="btn.zoomIn">+</button>
+            <button class="map-btn" type="button" data-act="out"  data-i18n-title="btn.zoomOut"   data-i18n-aria="btn.zoomOut">−</button>
+            <button class="map-btn" type="button" data-act="home" data-i18n-title="btn.resetView" data-i18n-aria="btn.resetView">⌂</button>
+          </div>
+        </div>
         <div>
           <div id="practice-params" class="sliders compact"></div>
           <p id="practice-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -407,12 +421,19 @@
         <h2 data-i18n="trap.lead">Aufgaben, bei denen die falschen Antworten typische Denkfehler sind.</h2>
       </div>
       <div class="quiz-body">
-        <canvas id="trap-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+        <div class="canvas-with-view">
+          <canvas id="trap-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+          <div class="view-mini" data-mode="trap">
+            <button class="map-btn" type="button" data-act="in"   data-i18n-title="btn.zoomIn"    data-i18n-aria="btn.zoomIn">+</button>
+            <button class="map-btn" type="button" data-act="out"  data-i18n-title="btn.zoomOut"   data-i18n-aria="btn.zoomOut">−</button>
+            <button class="map-btn" type="button" data-act="home" data-i18n-title="btn.resetView" data-i18n-aria="btn.resetView">⌂</button>
+          </div>
+        </div>
         <div>
           <p id="trap-prompt" class="trap-prompt"></p>
           <div id="trap-options" class="options-grid"></div>
           <p id="trap-feedback" class="feedback" role="status" aria-live="polite"></p>
-          <p id="trap-note" class="trap-note" hidden></p>
+          <p id="trap-note" class="trap-note" role="status" aria-live="polite" hidden></p>
         </div>
       </div>
       <button id="btn-trap-new" class="btn-secondary" type="button" data-i18n="trap.new">Neue Aufgabe</button>
