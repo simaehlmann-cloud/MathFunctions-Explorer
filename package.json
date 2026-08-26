@@ -1,6 +1,6 @@
 {
   "name": "mathfunctions-explorer",
-  "version": "6.6.0",
+  "version": "6.6.1",
   "description": "Interaktiver Funktionenplotter für den Mathematikunterricht",
   "private": true,
   "type": "module",

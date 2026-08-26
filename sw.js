@@ -14,7 +14,11 @@
    ========================================================================== */
 'use strict';
 
-const CACHE = 'mfe-v6.6.0';
+/* Die Baukennung wird von tools/build-www.mjs ersetzt. Dadurch bekommt JEDE
+   Auslieferung einen eigenen Zwischenspeicher, und der alte wird beim
+   Aktivieren geloescht (siehe unten). Bleibt sie stehen - beim direkten
+   Ausliefern des Quelltextes -, zaehlt die Versionsnummer. */
+const CACHE = 'mfe-v6.6.1-__BUILD__';
 const ASSETS = [
   './',
   './index.html',
