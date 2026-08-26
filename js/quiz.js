@@ -22,7 +22,7 @@ window.MFE = window.MFE || {};
 MFE.quiz = (() => {
 const { $, $$, toast, renderSliderGroup } = MFE.ui;
 const { clamp, tolerance, fmt, mfmt, parseLoose, FUNCTIONS, CATEGORY_FORMS } = MFE.math;
-const { Graph, drawScene, findZeros } = MFE.graph;
+const { Graph, drawScene, findZeros, bindViewControl, normalizeView, zoomFactorOf } = MFE.graph;
 const licence = MFE.licence;
 const t = (k, v) => MFE.i18n.t(k, v);
 
@@ -74,6 +74,32 @@ function sanitizeValues(form, raw) {
   return out;
 }
 
+/* Wie weit darf der von der Lehrkraft gewaehlte Ausschnitt vom Standard
+   abweichen? Dieselben Grenzen wie bei der Bedienung - ein aus einem
+   fremden Link stammender Ausschnitt soll nichts erzeugen, was man selbst
+   nicht einstellen koennte. */
+const VIEW_ZOOM_MIN = 0.2;
+const VIEW_ZOOM_MAX = 4;
+
+/** Prueft einen gespeicherten Ausschnitt. Rueckgabe: geprueftes Objekt oder
+ *  null - dann gilt der Standard der Funktionsklasse. */
+function sanitizeView(form, raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const base = viewFor(form);
+  const nums = ['xMin', 'xMax', 'yMin', 'yMax'].map(k => Number(raw[k]));
+  if (nums.some(v => !Number.isFinite(v) || Math.abs(v) > 1e6)) return null;
+  const v = normalizeView({ xMin: nums[0], xMax: nums[1], yMin: nums[2], yMax: nums[3] });
+  const rel = zoomFactorOf(base, v);
+  if (!(rel >= VIEW_ZOOM_MIN && rel <= VIEW_ZOOM_MAX)) return null;
+  // Die pi-Teilung gehoert zur Funktionsklasse, nicht zum Ausschnitt.
+  v.piAxis = !!base.piAxis;
+  // Deckt sich der Ausschnitt mit dem Standard, wird nichts gespeichert.
+  return sameView(v, base) ? null : v;
+}
+
+const sameView = (a, b) => ['xMin', 'xMax', 'yMin', 'yMax']
+  .every(k => Math.abs(a[k] - b[k]) < 1e-6);
+
 function sanitizeTask(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const type = TYPES.includes(raw.type) ? raw.type : null;
@@ -95,6 +121,8 @@ function sanitizeTask(raw) {
   if (!values) return null;
 
   const task = { type, form, values };
+  const view = sanitizeView(form, raw.view);
+  if (view) task.view = view;
 
   if (type === 'match') {
     const opts = Array.isArray(raw.options) ? raw.options : [];
@@ -199,13 +227,24 @@ function getQuiz(id) { return loadAll().find(q => q.id === id) || null; }
    macht jeden bereits verteilten Link unlesbar. Nur hinten anhaengen.
    -------------------------------------------------------------------------- */
 const MAGIC = 0x4d;
+/* Format 1: ohne gespeicherten Ausschnitt. Format 2: mit.
+   Geschrieben wird 2 NUR, wenn mindestens eine Aufgabe einen eigenen
+   Ausschnitt traegt. Dadurch bleiben bestehende Quizze Byte fuer Byte
+   gleich - alte Links, QR-Codes und Sicherungen bleiben lesbar, und der
+   QR-Code wird nicht ohne Grund groesser. */
 const FORMAT = 1;
+const FORMAT_VIEW = 2;
 const FORM_ORDER = [
   'linear', 'quad_standard', 'quad_vertex', 'quad_factored', 'exponential',
   'sinus', 'cubic', 'root', 'absolute', 'logarithm', 'rational', 'tangens'
 ];
 const READOFF_ORDER = ['yint', 'root', 'vertex'];
 const SCALE = 10000;
+/* Achsengrenzen brauchen keine vier Nachkommastellen: ein Hundertstel einer
+   Achseneinheit liegt weit unter einem Bildpunkt. Der groebere Massstab
+   spart je Ausschnitt rund vier Byte - bei zwanzig Aufgaben ist das eine
+   ganze QR-Version weniger. */
+const VIEW_SCALE = 100;
 
 class Writer {
   constructor() { this.b = []; }
@@ -215,8 +254,8 @@ class Writer {
     while (n >= 0x80) { this.b.push((n & 0x7f) | 0x80); n >>>= 7; }
     this.b.push(n);
   }
-  num(v) {
-    const n = Math.round(v * SCALE);
+  num(v, scale = SCALE) {
+    const n = Math.round(v * scale);
     this.varint((n << 1) ^ (n >> 31));          // Zickzack: kleine negative Zahlen bleiben kurz
   }
   str(text) {
@@ -241,7 +280,7 @@ class Reader {
     }
     throw new RangeError('Varint zu lang');
   }
-  num() { const z = this.varint(); return ((z >>> 1) ^ -(z & 1)) / SCALE; }
+  num(scale = SCALE) { const z = this.varint(); return ((z >>> 1) ^ -(z & 1)) / scale; }
   str(max) {
     const len = this.varint();
     if (len > 4096 || this.i + len > this.a.length) throw new RangeError('Zeichenkette zu lang');
@@ -262,7 +301,10 @@ const readValues = (r, form) => {
 
 function packQuiz(quiz) {
   const w = new Writer();
-  w.u8(MAGIC); w.u8(FORMAT);
+  // Nur heraufstufen, wenn wirklich ein Ausschnitt mitgeht.
+  const withView = quiz.tasks.some(t => t && t.view);
+  const fmt = withView ? FORMAT_VIEW : FORMAT;
+  w.u8(MAGIC); w.u8(fmt);
   w.str(quiz.title);
   w.u8(Math.min(quiz.tasks.length, 255));
   for (const task of quiz.tasks.slice(0, 255)) {
@@ -280,6 +322,16 @@ function packQuiz(quiz) {
     if (fi < 0) throw new Error('unbekannte Darstellungsform: ' + task.form);
     w.u8(fi);
     writeValues(w, task.form, task.values);
+    if (fmt >= FORMAT_VIEW) {
+      // Ein Merkbyte je Aufgabe, danach vier Zahlen. Bei Format 1 entfaellt
+      // beides vollstaendig.
+      if (task.view) {
+        w.u8(1);
+        for (const k of ['xMin', 'xMax', 'yMin', 'yMax']) w.num(task.view[k], VIEW_SCALE);
+      } else {
+        w.u8(0);
+      }
+    }
     if (task.type === 'match') {
       const opts = task.options ?? [];
       w.u8(opts.length);
@@ -303,7 +355,7 @@ function unpackQuiz(bytes) {
   const r = new Reader(bytes);
   if (r.u8() !== MAGIC) return null;
   const format = r.u8();
-  if (format !== FORMAT) return null;
+  if (format !== FORMAT && format !== FORMAT_VIEW) return null;
   const title = r.str(MAX_TITLE);
   const count = r.u8();
   if (count > MAX_TASKS) return null;
@@ -323,6 +375,10 @@ function unpackQuiz(bytes) {
     const form = FORM_ORDER[r.u8()];
     if (!form || !FUNCTIONS[form]) return null;
     const task = { type, form, values: readValues(r, form) };
+    if (format >= FORMAT_VIEW && r.u8() === 1) {
+      task.view = { xMin: r.num(VIEW_SCALE), xMax: r.num(VIEW_SCALE),
+                    yMin: r.num(VIEW_SCALE), yMax: r.num(VIEW_SCALE) };
+    }
     if (type === 'match') {
       const n = r.u8();
       if (n > 8) return null;
@@ -588,14 +644,14 @@ function viewFor(form) {
 const BLANK_OPTS = { helpers: false, roots: false, yint: false, vertex: false,
                      drag: false, intersections: false, derivative: false, tangent: false, trace: false };
 
-function drawTaskGraph(graph, task, attempt, wrongValues) {
+function drawTaskGraph(graph, task, attempt, wrongValues, view) {
   if (!graph.measure()) return false;
   const curves = [];
   if (attempt) curves.push({ form: task.form, values: attempt, color: '--graph' });
   const scene = {
     curves: curves.length ? curves : [{ form: task.form, values: task.values, color: '--graph' }],
     activeIndex: 0,
-    view: viewFor(task.form),
+    view: view ?? viewFor(task.form),
     opts: BLANK_OPTS,
     scale: host.scale()
   };
@@ -609,6 +665,52 @@ function drawTaskGraph(graph, task, attempt, wrongValues) {
   }
   drawScene(graph, scene);
   return true;
+}
+
+/* --------------------------------------------------------------------------
+   Ausschnitt-Bedienung fuer Abspieler und Editor
+   --------------------------------------------------------------------------
+   Beide Canvas entstehen erst beim Anzeigen und werden bei jeder Aufgabe neu
+   gebaut. Die Bedienung muss deshalb mitgebaut und beim Ersetzen wieder
+   abgemeldet werden - sonst haengen nach zehn Aufgaben zehn Satz Zuhoerer an
+   Elementen, die es nicht mehr gibt.
+
+   Die Knoepfe stehen hier im Code statt im HTML, weil das Canvas selbst hier
+   entsteht. Aussehen und Verhalten sind dieselben wie im Ueben-Reiter.
+   -------------------------------------------------------------------------- */
+const VIEW_ACTS = [['in', '+', 'btn.zoomIn'],
+                   ['out', '\u2212', 'btn.zoomOut'],
+                   ['home', '\u2302', 'btn.resetView']];
+
+function attachViewControl(cv, { graph, base, get, set }) {
+  if (!cv?.parentNode) return null;
+
+  // Canvas in einen Rahmen setzen, damit die Knoepfe darauf liegen koennen.
+  const wrap = document.createElement('div');
+  wrap.className = 'canvas-with-view';
+  cv.parentNode.insertBefore(wrap, cv);
+  wrap.append(cv);
+
+  const box = document.createElement('div');
+  box.className = 'view-mini';
+  for (const [act, glyph, key] of VIEW_ACTS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'map-btn';
+    b.dataset.act = act;
+    b.textContent = glyph;
+    b.title = t(key);
+    b.setAttribute('aria-label', t(key));   // die Zeichen sind nicht vorlesbar
+    box.append(b);
+  }
+  wrap.append(box);
+
+  const ctl = bindViewControl(cv, { graph, base, get, set, min: 0.2, max: 4, wheelKey: true });
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (b) ctl.apply(b.dataset.act);
+  });
+  return ctl;
 }
 
 /* --------------------------------------------------------------------------
@@ -706,7 +808,8 @@ function allowedForms() {
 /* ==========================================================================
    6 · EDITOR
    ========================================================================== */
-const builder = { quiz: null, editing: -1, draft: null, ctx: null, graph: null };
+const builder = { quiz: null, editing: -1, draft: null, ctx: null, graph: null,
+                  view: null, viewCtl: null };
 
 function newQuiz() {
   return { id: uid(), title: '', created: Date.now(), tasks: [] };
@@ -795,6 +898,10 @@ function draftDefaults(type) {
 
 function startTask(type, index = -1) {
   builder.editing = index;
+  // Beim Bearbeiten den gespeicherten Ausschnitt der Aufgabe uebernehmen,
+  // bei einer neuen Aufgabe den Standard - sonst schleppt man den Zoom der
+  // vorherigen Aufgabe mit.
+  builder.view = (index >= 0 ? builder.quiz?.tasks?.[index]?.view : null) ?? null;
   builder.draft = index >= 0
     ? JSON.parse(JSON.stringify(builder.quiz.tasks[index]))
     : draftDefaults(type);
@@ -817,7 +924,7 @@ function renderEditor() {
     'editor-type',
     TYPES.map(ty => [ty, t('type.' + ty)]),
     d.type,
-    (v) => { builder.draft = draftDefaults(v); renderEditor(); }
+    (v) => { builder.view = null; builder.draft = draftDefaults(v); renderEditor(); }
   )));
 
   if (GRAPH_TYPES.has(d.type)) {
@@ -946,8 +1053,17 @@ function renderEditor() {
 function drawEditorPreview() {
   const cv = $('#editor-canvas');
   if (!cv || !builder.draft) return;
-  if (!builder.graph || builder.graph.canvas !== cv) builder.graph = new Graph(cv);
-  drawTaskGraph(builder.graph, builder.draft, null);
+  if (!builder.graph || builder.graph.canvas !== cv) {
+    builder.graph = new Graph(cv);
+    builder.viewCtl?.destroy();
+    builder.viewCtl = attachViewControl(cv, {
+      graph: () => builder.graph,
+      base: () => viewFor(builder.draft.form),
+      get: () => builder.view,
+      set: (v) => { builder.view = v; drawEditorPreview(); }
+    });
+  }
+  drawTaskGraph(builder.graph, builder.draft, null, null, builder.view);
 }
 
 /* Kleine Bauhelfer, damit der Editor nicht in innerHTML endet. */
@@ -993,9 +1109,18 @@ function commitTask() {
     return;
   }
   const prepared = { ...d };
+  /* Was die Lehrkraft in der Vorschau sieht, bekommt der Schueler. Weicht
+     der Ausschnitt nicht vom Standard ab, verwirft sanitizeView ihn wieder -
+     dann bleibt das Quiz im alten, kleineren Format. */
+  if (builder.view) prepared.view = builder.view;
   if (d.type === 'match') prepared.options = makeDistractors(d.form, d.values, 3);
   const clean = sanitizeTask(prepared);
   if (!clean) { toast(t('quiz.taskIncomplete')); return; }
+  /* Ohne offenes Quiz gibt es nichts zu speichern. Bisher schlug hier ein
+     Zugriff auf null fehl - erreichbar, wenn der Editor ohne vorher
+     angelegtes Quiz sichtbar wird. Lieber still zurueck als ein Absturz,
+     der die ganze Seite lahmlegt. */
+  if (!builder.quiz) { builder.draft = null; builder.editing = -1; return; }
   if (builder.editing >= 0) builder.quiz.tasks[builder.editing] = clean;
   else {
     if (builder.quiz.tasks.length >= MAX_TASKS) { toast(t('quiz.taskLimit', { n: MAX_TASKS })); return; }
@@ -1078,7 +1203,8 @@ function renderList() {
 /* attempt: 0 = erster Versuch, 1 = zweiter. wrongValues haelt die zuerst
    gewaehlte falsche Kurve fest, damit sie im Graphen gezeigt werden kann. */
 const player = { quiz: null, index: 0, score: 0, marks: [], locked: false,
-                 order: [], ctx: null, graph: null, attempt: 0, wrongValues: null };
+                 order: [], ctx: null, graph: null, attempt: 0, wrongValues: null,
+                 view: null, viewCtl: null };
 
 /** Punktzahl kann durch den zweiten Versuch halb sein. */
 const scoreText = (v) => fmt(Math.round(v * 2) / 2, 1);
@@ -1107,6 +1233,10 @@ function renderTask() {
   player.ctx = null;
   player.attempt = 0;
   player.wrongValues = null;
+  player.view = null;                     // jede Aufgabe faengt beim Standard an
+  // Der alte Rahmen samt Zuhoerern verschwindet mit dem Neuaufbau des Koerpers.
+  player.viewCtl?.destroy();
+  player.viewCtl = null;
 
   $('#play-progress').textContent =
     t('quiz.progress', { i: player.index + 1, n: player.quiz.tasks.length });
@@ -1229,8 +1359,20 @@ function drawPlayGraph() {
   const cv = $('#play-canvas');
   if (!cv || !player.quiz) return;
   const task = player.quiz.tasks[player.index];
-  if (!player.graph || player.graph.canvas !== cv) player.graph = new Graph(cv);
-  drawTaskGraph(player.graph, task, task.type === 'build' ? player.ctx?.values : null, player.wrongValues);
+  if (!player.graph || player.graph.canvas !== cv) {
+    player.graph = new Graph(cv);
+    player.viewCtl?.destroy();
+    player.viewCtl = attachViewControl(cv, {
+      graph: () => player.graph,
+      // Hat die Lehrkraft einen Ausschnitt festgelegt, ist DAS der Standard:
+      // der Haus-Knopf fuehrt dorthin zurueck, nicht zur Voreinstellung.
+      base: () => task.view ?? viewFor(task.form),
+      get: () => player.view,
+      set: (v) => { player.view = v; drawPlayGraph(); }
+    });
+  }
+  drawTaskGraph(player.graph, task, task.type === 'build' ? player.ctx?.values : null,
+                player.wrongValues, player.view ?? task.view);
 }
 
 /** Toleranz beim Ablesen: grosszuegig genug fuer den Blick auf den Graphen,

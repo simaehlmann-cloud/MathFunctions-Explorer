@@ -19,6 +19,7 @@
    ========================================================================== */
 import { readFile, writeFile, mkdir, rm, cp, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -124,7 +125,26 @@ async function main() {
   // 4 · Cache-Name je Ausgabe
   const swPath = path.join(OUT, 'sw.js');
   let sw = await readFile(swPath, 'utf8');
+  /* Baukennung einsetzen. Jede Auslieferung bekommt damit einen eigenen
+     Zwischenspeicher; sw.js loescht beim Aktivieren alle anderen. Ohne das
+     behielten Nutzerinnen mit installierter PWA ihre alte Fassung, solange
+     die Versionsnummer gleich blieb - genau so ist es zwischen 6.6.0 und der
+     Berichtigung passiert.
+
+     Vorrang hat der Git-Commit: gleicher Stand, gleicher Name, also kein
+     unnoetiger Neubau des Zwischenspeichers bei einem zweiten Lauf. Ohne Git
+     (etwa in einem entpackten Archiv) tritt der Zeitstempel an seine Stelle. */
+  let stamp = '';
+  try {
+    stamp = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim();
+  } catch { /* kein Git - dann eben die Uhr */ }
+  if (!/^[0-9a-f]{7,40}$/.test(stamp)) {
+    stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  }
+  sw = sw.replace('__BUILD__', stamp);
   sw = sw.replace(/const CACHE = '([^']+)';/, (_, v) => `const CACHE = '${v}-${flavour}';`);
+  if (sw.includes('__BUILD__')) throw new Error('Baukennung nicht ersetzt - Muster in sw.js geaendert?');
   if (lite) sw = sw.replace(/icons\/icon-(192|512|maskable-512)\.png/g, 'icons/icon-lite-$1.png');
   await writeFile(swPath, sw);
 

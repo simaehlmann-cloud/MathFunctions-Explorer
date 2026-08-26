@@ -83,6 +83,182 @@ function zoomView(view, factor, ax, ay, axis = 'both') {
  * Gebraucht, um den Zoom dort zu begrenzen, wo ein verlorener Ausschnitt
  * niemandem hilft - im Ueben-Reiter.
  */
+/* ==========================================================================
+   Ausschnitt-Bedienung fuer einen einzelnen Graphen
+   --------------------------------------------------------------------------
+   Ein Baustein fuer alle Nebengraphen: Ueben-Reiter, Abspieler, Editor. Der
+   Explorer hat seine eigene, aeltere Steuerung mit Ziehen, Trace und
+   Ziehpunkten - die bleibt, wo sie ist.
+
+   Bedient wird auf allen Wegen, die jemand erwartet:
+     Finger    zwei Finger zusammen und auseinander (iPad, Telefon)
+     Maus      Rad, Doppelklick (mit Umschalt heraus)
+     Tastatur  Plus, Minus, 0 fuer den Standard
+
+   Ausdruecklich NICHT dabei: Verschieben mit einem Finger. Im Nachbau-Modus
+   zieht man an den Reglern, und ein versehentlich verschobener Ausschnitt
+   waere dort aergerlich. Wer die Mitte verlegen will, zoomt an der Stelle,
+   auf die er schaut - dorthin laeuft der Ausschnitt von selbst.
+
+   Der Aufrufer sagt, wo der Ausschnitt liegt (get/set) und was der
+   Standard ist (base). Die Grenzen werden relativ zum Standard geprueft:
+   ein Nebengraph, aus dem man nicht mehr herausfindet, hilft niemandem.
+   ========================================================================== */
+function bindViewControl(canvas, opts) {
+  if (!canvas || typeof opts?.get !== 'function' || typeof opts?.set !== 'function') return () => {};
+  const { get, set, base, graph, min = 0.2, max = 4, wheelKey = false } = opts;
+
+  // Ohne tabindex nimmt ein Canvas keine Tastatureingaben entgegen.
+  if (!canvas.hasAttribute('tabindex')) canvas.tabIndex = 0;
+
+  const g = () => (typeof graph === 'function' ? graph() : graph);
+  const baseView = () => (typeof base === 'function' ? base() : base);
+
+  /** Zoomt um einen Punkt in Achsenwerten und haelt die Grenzen ein. */
+  const apply = (factor, ax, ay, axis = 'both') => {
+    const b = baseView();
+    if (!b) return;
+    const cand = zoomView(get() ?? b, factor, ax, ay, axis);
+    const rel = zoomFactorOf(b, cand);
+    // An der Grenze passiert nichts. Ein Knopf, der ins Leere fuehrt, ist
+    // besser als ein Ausschnitt, aus dem man nicht mehr herausfindet.
+    if (rel < min || rel > max) return;
+    set(cand);
+  };
+
+  /** Bildpunkt unter dem Zeiger in Achsenwerte umrechnen. */
+  const at = (e) => {
+    const gr = g();
+    if (!gr?.ready) return null;
+    const r = canvas.getBoundingClientRect();
+    return { x: gr.px2x(e.clientX - r.left), y: gr.py2y(e.clientY - r.top) };
+  };
+
+  const centre = () => {
+    const v = get() ?? baseView();
+    return v ? { x: (v.xMin + v.xMax) / 2, y: (v.yMin + v.yMax) / 2 } : null;
+  };
+
+  const onWheel = (e) => {
+    // Am Notebook scrollt dieselbe Geste die Seite. Wo der Graph mitten in
+    // einer langen Seite steht, verlangt der Aufrufer deshalb eine
+    // Zusatztaste - sonst zoomt man beim Scrollen versehentlich.
+    if (wheelKey && !(e.ctrlKey || e.metaKey)) return;
+    const p = at(e);
+    if (!p) return;
+    e.preventDefault();
+    const axis = e.shiftKey ? 'x' : e.altKey ? 'y' : 'both';
+    apply(e.deltaY > 0 ? 1.12 : 1 / 1.12, p.x, p.y, axis);
+  };
+
+  const onDblClick = (e) => {
+    const p = at(e);
+    if (!p) return;
+    e.preventDefault();
+    apply(e.shiftKey ? 1.6 : 0.625, p.x, p.y);
+  };
+
+  const onKey = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const c = centre();
+    if (!c) return;
+    if (e.key === '+' || e.key === '=') apply(1 / 1.25, c.x, c.y);
+    else if (e.key === '-' || e.key === '_') apply(1.25, c.x, c.y);
+    else if (e.key === '0') set(null);       // 0 = zurueck auf den Standard
+    else return;
+    e.preventDefault();
+  };
+
+  /* --- Zwei Finger ------------------------------------------------------
+     Der Bezugspunkt wird beim Aufsetzen einmal festgehalten und danach nicht
+     mehr neu berechnet. Wuerde man ihn bei jeder Bewegung neu bestimmen,
+     schaukelte sich die Geste auf. */
+  const pts = new Map();
+  let pinch = null;
+
+  const twoPointer = () => {
+    const [a, b] = [...pts.values()];
+    return {
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      cx: (a.x + b.x) / 2,
+      cy: (a.y + b.y) / 2
+    };
+  };
+
+  const onDown = (e) => {
+    if (e.pointerType === 'mouse') return;
+    const r = canvas.getBoundingClientRect();
+    pts.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+    if (pts.size !== 2) return;
+    const gr = g();
+    if (!gr?.ready) return;
+    const st = twoPointer();
+    const b = baseView();
+    pinch = { startDist: st.dist, startView: get() ?? b,
+              ax: gr.px2x(st.cx), ay: gr.py2y(st.cy) };
+    e.preventDefault();
+  };
+
+  const onMove = (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const r = canvas.getBoundingClientRect();
+    pts.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+    if (!pinch || pts.size < 2) return;
+    const st = twoPointer();
+    if (!(st.dist > 0)) return;
+    e.preventDefault();
+    const b = baseView();
+    if (!b) return;
+    const factor = clamp(pinch.startDist / st.dist, 0.02, 50);
+    const cand = zoomView(pinch.startView, factor, pinch.ax, pinch.ay);
+    const rel = zoomFactorOf(b, cand);
+    // Waehrend der Geste wird an der Grenze festgehalten, nicht abgebrochen -
+    // sonst zuckt das Bild, wenn man ueber die Grenze hinausdrueckt.
+    if (rel < min || rel > max) return;
+    set(cand);
+  };
+
+  const onUp = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+  };
+
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('dblclick', onDblClick);
+  canvas.addEventListener('keydown', onKey);
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointercancel', onUp);
+  canvas.addEventListener('pointerleave', onUp);
+
+  /* Rueckgabe: apply() fuer Knoepfe, destroy() zum Abmelden. Die Knoepfe
+     gehen bewusst durch dieselbe Pruefung wie Rad und Finger - sonst haette
+     man zwei Stellen, an denen die Grenzen stehen, und in einem halben Jahr
+     zwei verschiedene. */
+  const apply3 = (act) => {
+    if (act === 'home') { set(null); return; }
+    const c = centre();
+    if (!c) return;
+    apply(act === 'in' ? 1 / 1.25 : 1.25, c.x, c.y);
+  };
+
+  const destroy = () => {
+    canvas.removeEventListener('wheel', onWheel);
+    canvas.removeEventListener('dblclick', onDblClick);
+    canvas.removeEventListener('keydown', onKey);
+    canvas.removeEventListener('pointerdown', onDown);
+    canvas.removeEventListener('pointermove', onMove);
+    canvas.removeEventListener('pointerup', onUp);
+    canvas.removeEventListener('pointercancel', onUp);
+    canvas.removeEventListener('pointerleave', onUp);
+    pts.clear();
+    pinch = null;
+  };
+
+  return { apply: apply3, destroy };
+}
+
 function zoomFactorOf(base, view) {
   const bx = base.xMax - base.xMin;
   const vx = view.xMax - view.xMin;
@@ -594,7 +770,7 @@ function drawScene(g, scene) {
 
 return {
   Graph, drawScene, findZeros, niceStep, piLabel, derivative,
-  normalizeView, zoomView, panView, zoomFactorOf, fitY, labelDigits,
+  normalizeView, zoomView, panView, zoomFactorOf, bindViewControl, fitY, labelDigits,
   DEFAULT_VIEW, MIN_SPAN, MAX_SPAN, CURVE_COLORS, paramColor
 };
 })();

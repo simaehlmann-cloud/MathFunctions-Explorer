@@ -9,7 +9,8 @@
 
 (() => {
 const { clamp, tolerance, fmt, mfmt, parseLoose, FUNCTIONS, CATEGORY_FORMS } = MFE.math;
-const { Graph, drawScene, normalizeView, zoomView, panView, zoomFactorOf, fitY, DEFAULT_VIEW,
+const { Graph, drawScene, normalizeView, zoomView, panView, zoomFactorOf, bindViewControl,
+        fitY, DEFAULT_VIEW,
         CURVE_COLORS } = MFE.graph;
 const { $, $$, debounce, toast, renderSliderGroup, setValue: uiSetValue, setSnap } = MFE.ui;
 const licence = MFE.licence;
@@ -28,7 +29,7 @@ const BEAMER_SCALE = 1.55;
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '6.6.0';
+const APP_VERSION = '6.6.1';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -1300,27 +1301,13 @@ function taskView(store, form) {
   return store.view ?? MFE.quiz.viewFor(form);
 }
 
+/* Steuerungen je Modus. Angelegt in bind(), sobald die Canvas im Dokument
+   stehen; die Knoepfe im HTML rufen darueber dieselbe Logik auf wie Rad,
+   Finger und Tastatur. */
+const quizViewControls = {};
+
 function adjustQuizView(mode, act) {
-  const owner = QUIZ_VIEW_OWNERS[mode];
-  if (!owner) return;
-  const store = owner.store();
-  const form = owner.form();
-  if (!form) return;
-  const base = MFE.quiz.viewFor(form);
-  if (act === 'home') {
-    store.view = null;                      // null heisst "Standard", nicht "leer"
-  } else {
-    const v = store.view ?? base;
-    const cx = (v.xMin + v.xMax) / 2;
-    const cy = (v.yMin + v.yMax) / 2;
-    const cand = zoomView(v, act === 'in' ? 1 / ZOOM_STEP : ZOOM_STEP, cx, cy);
-    // An der Grenze passiert nichts. Ein Knopf, der ins Leere fuehrt, ist
-    // besser als ein Ausschnitt, aus dem man nicht mehr herausfindet.
-    const rel = zoomFactorOf(base, cand);
-    if (rel < QUIZ_ZOOM_MIN || rel > QUIZ_ZOOM_MAX) return;
-    store.view = cand;
-  }
-  owner.redraw();
+  quizViewControls[mode]?.apply(act);
 }
 
 function newQuizQuestion(fromExplorer = false) {
@@ -2608,6 +2595,28 @@ function bindEvents() {
     adjustQuizView(box.dataset.mode, btn.dataset.act);
   });
 
+  /* Finger, Rad, Doppelklick und Tastatur an den drei ruhigen Modi. Der
+     Wettkampf bleibt aussen vor - dort laeuft die Uhr.
+     wheelKey: der Ueben-Reiter ist eine lange, scrollbare Seite. Ohne Strg
+     wuerde man beim Scrollen versehentlich zoomen, sobald der Zeiger ueber
+     dem Graphen steht. Die Zwei-Finger-Geste braucht das nicht. */
+  for (const [mode, sel, graphOf] of [
+    ['match', '#quiz-canvas', () => quizGraph],
+    ['build', '#practice-canvas', () => practiceGraph],
+    ['trap', '#trap-canvas', () => trap.graph]
+  ]) {
+    const owner = QUIZ_VIEW_OWNERS[mode];
+    quizViewControls[mode] = bindViewControl($(sel), {
+      graph: graphOf,
+      base: () => (owner.form() ? MFE.quiz.viewFor(owner.form()) : null),
+      get: () => owner.store().view,
+      set: (v) => { owner.store().view = v; owner.redraw(); },
+      min: QUIZ_ZOOM_MIN,
+      max: QUIZ_ZOOM_MAX,
+      wheelKey: true
+    });
+  }
+
   $('#btn-trap-new').addEventListener('click', newTrapTask);
   $('#trap-options').addEventListener('click', (e) => {
     const b = e.target.closest('.quiz-opt');
@@ -2690,8 +2699,32 @@ function bindEvents() {
 /* ==========================================================================
    18 · START
    ========================================================================== */
+/* Rechner, auf denen entwickelt wird. Dort ist ein Zwischenspeicher nur im
+   Weg: man aendert eine Datei, laedt neu - und bekommt die alte Fassung.
+   Genau das hat beim Nachruesten der Zoomknoepfe eine halbe Stunde gekostet:
+   neues HTML aus dem Netz, altes CSS und JavaScript aus dem Cache. */
+const DEV_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
+const isDevHost = () => DEV_HOSTS.has(location.hostname) || location.hostname.endsWith('.local');
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+
+  /* Beim Entwickeln: nicht registrieren UND einen frueher registrierten
+     abmelden, samt Zwischenspeicher. Ohne das Abmelden bliebe ein einmal
+     installierter Worker fuer immer aktiv - Unterlassen entfernt ihn nicht. */
+  if (isDevHost()) {
+    navigator.serviceWorker.getRegistrations?.()
+      .then(list => Promise.all(list.map(r => r.unregister())))
+      .then(async () => {
+        try {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter(k => k.startsWith('mfe-')).map(k => caches.delete(k)));
+        } catch {}
+      })
+      .catch(() => {});
+    console.info('[sw] Entwicklungsrechner erkannt - kein Zwischenspeicher.');
+    return;
+  }
 
   /* In der installierten App ist der Service Worker sinnlos: die Dateien
      liegen ohnehin im Paket. Schlimmer noch - jede neue App-Fassung bringt

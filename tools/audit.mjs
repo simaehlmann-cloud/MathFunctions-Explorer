@@ -26,6 +26,16 @@ const read = (f) => readFileSync(path.join(ROOT, f), 'utf8');
 const html = read('index.html').replace(/<meta http-equiv="Content-Security-Policy"[\s\S]*?>/,'');
 const dom = new JSDOM(html,{url:'https://example.org/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:new VirtualConsole()});
 dom.window.matchMedia = () => ({matches:false,addEventListener(){},addListener(){}});
+/* Die Fassungen von jsdom unterscheiden sich darin, was sie im Fenster
+   bereitstellen. Fehlendes nachreichen, sonst prueft man die Umgebung statt
+   der App (siehe gleichlautende Stelle in smoke.mjs). */
+for (const name of ['TextEncoder', 'TextDecoder', 'Blob']) {
+  if (typeof dom.window[name] === 'undefined') dom.window[name] = globalThis[name];
+}
+if (typeof dom.window.btoa === 'undefined') {
+  dom.window.btoa = (b) => Buffer.from(b, 'binary').toString('base64');
+  dom.window.atob = (b) => Buffer.from(b, 'base64').toString('binary');
+}
 for (const f of ['js/licence.js','js/billing.js','js/i18n.js','js/functions.js','js/graph.js','js/diagnose.js','js/nav.js','js/ui.js','js/qr.js','js/quiz.js'])
   dom.window.eval(read(f));
 const W = dom.window, M = W.MFE;
@@ -97,6 +107,54 @@ for (const form of Object.keys(M.math.FUNCTIONS)) {
   }
 }
 console.log('4) Toleranz und Ziehpunkte geprueft');
+
+
+// 5) Gespeicherter Ausschnitt: Rundlauf, Grenzen, Abwaertskompatibilitaet
+{
+  const base = M.quiz.viewFor('linear');
+  const eng = { xMin: base.xMin/2, xMax: base.xMax/2, yMin: base.yMin/2, yMax: base.yMax/2 };
+
+  const mitAusschnitt = { title: 'A', tasks: [
+    { type: 'match', form: 'linear', values: { m: 2, b: 1 }, view: eng },
+    { type: 'value', form: 'linear', values: { m: 1, b: 0 }, x0: 2 }
+  ]};
+  const clean = M.quiz.sanitizeQuiz(mitAusschnitt);
+  ok(clean.tasks[0].view, 'Der Ausschnitt ueberlebt sanitizeQuiz');
+  ok(!clean.tasks[1].view, 'Aufgaben ohne eigenen Ausschnitt bekommen keinen');
+
+  const zurueck = M.quiz.decodeQuiz(M.quiz.encodeQuiz(clean));
+  ok(zurueck, 'Quiz mit Ausschnitt laesst sich kodieren und lesen');
+  ok(zurueck.tasks[0].view, 'Der Ausschnitt kommt zurueck');
+  for (const k of ['xMin','xMax','yMin','yMax']) {
+    ok(Math.abs(zurueck.tasks[0].view[k] - eng[k]) < 0.011, `Rundlauf ${k}: ${zurueck.tasks[0].view[k]} statt ${eng[k]}`);
+  }
+  ok(!zurueck.tasks[1].view, 'Die zweite Aufgabe bleibt ohne Ausschnitt');
+
+  // Ohne Ausschnitt muss das alte Format erhalten bleiben - sonst waeren
+  // bestehende Links und QR-Codes ploetzlich groesser.
+  const ohne = M.quiz.sanitizeQuiz({ title: 'A', tasks: [
+    { type: 'match', form: 'linear', values: { m: 2, b: 1 } }] });
+  const codeOhne = M.quiz.encodeQuiz(ohne);
+  const roh = W.atob(codeOhne.replace(/-/g,'+').replace(/_/g,'/'));
+  ok(roh.charCodeAt(1) === 1, `Ohne Ausschnitt bleibt es Format 1 (war ${roh.charCodeAt(1)})`);
+  const rohMit = W.atob(M.quiz.encodeQuiz(clean).replace(/-/g,'+').replace(/_/g,'/'));
+  ok(rohMit.charCodeAt(1) === 2, 'Mit Ausschnitt wird auf Format 2 heraufgestuft');
+
+  // Ein unsinniger Ausschnitt aus einem fremden Link darf nicht durchgehen.
+  for (const boese of [
+    { xMin: 0, xMax: 0, yMin: 0, yMax: 0 },
+    { xMin: -1e9, xMax: 1e9, yMin: -1e9, yMax: 1e9 },
+    { xMin: NaN, xMax: 5, yMin: -5, yMax: 5 },
+    { xMin: -0.001, xMax: 0.001, yMin: -0.001, yMax: 0.001 },
+    'kein Objekt', null, 42
+  ]) {
+    const q = M.quiz.sanitizeQuiz({ title: 'B', tasks: [
+      { type: 'match', form: 'linear', values: { m: 1, b: 0 }, view: boese }] });
+    ok(q.tasks.length === 1 && !q.tasks[0].view,
+       `Unsinniger Ausschnitt wird verworfen: ${JSON.stringify(boese)}`);
+  }
+}
+console.log('5) Gespeicherter Ausschnitt geprueft');
 
 if (bad) { console.error(`Belastungsprobe: ${bad} Befund(e)`); process.exit(1); }
 console.log('Belastungsprobe bestanden.');

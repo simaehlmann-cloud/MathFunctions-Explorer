@@ -304,7 +304,15 @@ const UMLAUT_OK = new Set([
 {
   const pkgVersion = JSON.parse(await read('package.json')).version;
   const appVersion = (await read('js/app.js')).match(/const APP_VERSION = '([^']*)'/)?.[1];
-  const swVersion = (await read('sw.js')).match(/const CACHE = 'mfe-v([\d.]+)'/)?.[1];
+  /* Der Cache-Name traegt hinter der Version eine Baukennung, die
+     build-www.mjs einsetzt (__BUILD__ im Quelltext). Geprueft wird deshalb
+     nur der Versionsteil davor. */
+  const swRaw = await read('sw.js');
+  const swVersion = swRaw.match(/const CACHE = 'mfe-v([\d.]+)/)?.[1];
+  if (!swRaw.includes('__BUILD__')) {
+    note('sw.js: die Baukennung __BUILD__ fehlt im Cache-Namen - dann bekaemen '
+       + 'Nutzerinnen mit installierter PWA bei gleicher Version die alten Dateien');
+  }
   if (appVersion !== pkgVersion) {
     note(`APP_VERSION in js/app.js ist "${appVersion}", package.json sagt "${pkgVersion}"`);
   }

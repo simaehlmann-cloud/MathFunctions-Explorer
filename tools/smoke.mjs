@@ -869,6 +869,92 @@ click('#mode-trap .view-mini [data-act="out"]'); await tick();
 click('#btn-trap-new'); await tick();
 click('#quiz-modes [data-mode="match"]'); await tick();
 
+/* --- Ausschnitt-Bedienung: Baustein, Finger, Abspieler, Editor ------------
+   Der Baustein aus graph.js wird an vier Stellen benutzt. Geprueft wird er
+   hier direkt - mit einem Ausschnitt, den der Test selbst haelt. */
+{
+  const { bindViewControl } = window.MFE.graph;
+  const base = window.MFE.quiz.viewFor('linear');
+  let view = null;
+  const cv = window.document.createElement('canvas');
+  window.document.body.append(cv);
+  // Ein Graph, der so tut, als sei er vermessen.
+  const fakeGraph = { ready: true, px2x: (px) => px / 10, py2y: (py) => -py / 10 };
+  const ctl = bindViewControl(cv, {
+    graph: () => fakeGraph, base: () => base,
+    get: () => view, set: (v) => { view = v; }, min: 0.2, max: 4
+  });
+
+  expect(typeof ctl.apply === 'function' && typeof ctl.destroy === 'function',
+         'Der Baustein liefert apply() und destroy()');
+  expect(cv.getAttribute('tabindex') === '0', 'Das Canvas wird tastaturbedienbar gemacht');
+
+  const span = (v) => (v ? v.xMax - v.xMin : base.xMax - base.xMin);
+  const start = span(base);
+  ctl.apply('in');
+  expect(span(view) < start, 'Knopf hinein verkleinert den Ausschnitt');
+  ctl.apply('out'); ctl.apply('out');
+  expect(span(view) > start, 'Knopf heraus vergroessert ihn');
+  ctl.apply('home');
+  expect(view === null, 'Der Haus-Knopf stellt den Standard wieder her');
+
+  // Grenzen: beliebig oft druecken darf nicht aus dem Bereich fuehren.
+  for (let i = 0; i < 30; i++) ctl.apply('in');
+  expect(span(view) / start >= 0.2 - 1e-9, 'Die untere Zoomgrenze haelt');
+  ctl.apply('home');
+  for (let i = 0; i < 30; i++) ctl.apply('out');
+  expect(span(view) / start <= 4 + 1e-9, 'Die obere Zoomgrenze haelt');
+  ctl.apply('home');
+
+  // Tastatur
+  const key = (k) => cv.dispatchEvent(new window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  key('+');
+  expect(span(view) < start, 'Plus auf der Tastatur zoomt hinein');
+  key('0');
+  expect(view === null, 'Die Null stellt den Standard her');
+
+  // Zwei Finger: aufsetzen, auseinanderziehen, absetzen
+  const touch = (type, id, x, y) => cv.dispatchEvent(new window.PointerEvent(type, {
+    pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true
+  }));
+  touch('pointerdown', 1, 100, 100);
+  touch('pointerdown', 2, 140, 100);
+  touch('pointermove', 2, 220, 100);          // Finger weiter auseinander
+  expect(view && span(view) < start, 'Zwei Finger auseinander zoomt hinein');
+  touch('pointerup', 1, 100, 100);
+  touch('pointerup', 2, 220, 100);
+
+  // Nach dem Abmelden darf nichts mehr passieren.
+  ctl.apply('home');
+  ctl.destroy();
+  const vorher = view;
+  key('+');
+  expect(view === vorher, 'Nach destroy() reagiert die Tastatur nicht mehr');
+  cv.remove();
+}
+
+// Eigene Quizze: Abspieler und Editor haben dieselbe Bedienung.
+// In Lite ist der Editor gesperrt - dann faellt dieser Abschnitt aus.
+click('#btn-home'); await tick();
+click('#card-quizzes'); await tick();
+if (LITE) {
+  expect($('#pro-dialog').open, 'Lite: der Quiz-Editor ist gesperrt');
+  $('#pro-dialog').close('cancel'); await tick();
+} else {
+{
+  const quizzes = window.MFE.quiz.loadAll();
+  expect(Array.isArray(quizzes), 'Quizliste ist lesbar');
+}
+click('#btn-new-quiz'); await tick();
+click('#btn-add-task'); await tick();
+expect($('#editor-canvas'), 'Der Editor zeigt eine Vorschau');
+expect($('#editor-canvas').closest('.canvas-with-view'), 'Die Vorschau steckt im Rahmen mit Bedienung');
+expect($$('#editor-canvas ~ .view-mini [data-act]').length === 3
+       || $$('.canvas-with-view .view-mini [data-act]').length >= 3,
+       'Der Editor hat die drei Knoepfe');
+click('#btn-editor-save'); await tick();
+}
+
 // --- Tastaturbedienung und Beschreibung des Graphen ------------------------
 click('#btn-home'); await tick();
 click('.fn-card[data-category="linear"]'); await tick();
