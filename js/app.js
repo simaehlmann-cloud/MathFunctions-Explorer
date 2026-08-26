@@ -9,7 +9,7 @@
 
 (() => {
 const { clamp, tolerance, fmt, mfmt, parseLoose, FUNCTIONS, CATEGORY_FORMS } = MFE.math;
-const { Graph, drawScene, normalizeView, zoomView, panView, fitY, DEFAULT_VIEW,
+const { Graph, drawScene, normalizeView, zoomView, panView, zoomFactorOf, fitY, DEFAULT_VIEW,
         CURVE_COLORS } = MFE.graph;
 const { $, $$, debounce, toast, renderSliderGroup, setValue: uiSetValue, setSnap } = MFE.ui;
 const licence = MFE.licence;
@@ -385,7 +385,10 @@ function explorerCtx() {
     onCommit: () => pushHistory()
   };
 }
-const setValue = (ctx, id, v) => uiSetValue(ctx, id, v);
+/* Optionen durchreichen. Der Wrapper liess sie bisher fallen; alle
+   Aufrufstellen uebergeben zufaellig {snap:false}, was der Vorgabewert ist -
+   ein spaeteres {snap:true} waere wirkungslos geblieben, ohne Fehlermeldung. */
+const setValue = (ctx, id, v, opts) => uiSetValue(ctx, id, v, opts);
 
 /* ==========================================================================
    5 · EXPLORER-DARSTELLUNG
@@ -1258,8 +1261,66 @@ async function copyTable() {
 const quiz = { answer: null, options: [], score: 0, total: 0, locked: false,
                form: 'linear', attempt: 0, wrong: null };
 
-function quizView(form) {
-  return { ...state.view, piAxis: FUNCTIONS[form].piAxis || state.piAxis };
+/* --------------------------------------------------------------------------
+   Achsenausschnitt im Ueben-Reiter
+   --------------------------------------------------------------------------
+   FEHLER bis v6.6: Zuordnen und Nachbauen benutzten state.view - den
+   Ausschnitt des Explorers. Wer dort auf x von 0 bis 2 gezoomt hatte, bekam
+   die Aufgabe als senkrechten Strich vorgesetzt und konnte nichts dagegen
+   tun: die Zoomknoepfe und die Eingabefelder liegen im Explorer-Reiter, die
+   Wischgeste haengt am Explorer-Canvas.
+
+   Jetzt startet jede Aufgabe mit dem Ausschnitt, den die Funktionsklasse
+   braucht (MFE.quiz.viewFor) - reproduzierbar, auch wenn eine ganze Klasse
+   dieselbe Aufgabe vor sich hat. Wer genauer hinsehen will, zoomt mit den
+   Knoepfen am Bildrand; die naechste Aufgabe faengt wieder sauber an.
+
+   Im Wettkampf gibt es die Knoepfe bewusst nicht: dort laeuft die Uhr, und
+   Zoomen waere verlorene Zeit statt Erkenntnis.
+   -------------------------------------------------------------------------- */
+const ZOOM_STEP = 1.25;
+/* Grenzen relativ zum Standardausschnitt. graph.js deckelt erst bei einer
+   Spannweite von 1e7 - im Explorer sinnvoll, im Ueben-Reiter nicht: dort
+   waere die Kurve dann ein waagerechter Strich, und der Weg zurueck ist ein
+   Knopf, den in der Klasse niemand sucht. */
+const QUIZ_ZOOM_MIN = 0.2;
+const QUIZ_ZOOM_MAX = 4;
+
+/** Woher kommt Ausschnitt und Form je Modus? Eine Tabelle statt drei
+ *  Fallunterscheidungen - beim naechsten Modus ist nur hier etwas zu tun. */
+const QUIZ_VIEW_OWNERS = {
+  match: { store: () => quiz,  form: () => quiz.form,        redraw: () => drawQuiz() },
+  build: { store: () => practice, form: () => practice.form, redraw: () => drawPractice() },
+  trap:  { store: () => trap,  form: () => trap.task?.form,  redraw: () => drawTrap() }
+};
+
+/** Der Ausschnitt einer Aufgabe: der eingestellte, sonst der Standard. */
+function taskView(store, form) {
+  if (!form) return null;
+  return store.view ?? MFE.quiz.viewFor(form);
+}
+
+function adjustQuizView(mode, act) {
+  const owner = QUIZ_VIEW_OWNERS[mode];
+  if (!owner) return;
+  const store = owner.store();
+  const form = owner.form();
+  if (!form) return;
+  const base = MFE.quiz.viewFor(form);
+  if (act === 'home') {
+    store.view = null;                      // null heisst "Standard", nicht "leer"
+  } else {
+    const v = store.view ?? base;
+    const cx = (v.xMin + v.xMax) / 2;
+    const cy = (v.yMin + v.yMax) / 2;
+    const cand = zoomView(v, act === 'in' ? 1 / ZOOM_STEP : ZOOM_STEP, cx, cy);
+    // An der Grenze passiert nichts. Ein Knopf, der ins Leere fuehrt, ist
+    // besser als ein Ausschnitt, aus dem man nicht mehr herausfindet.
+    const rel = zoomFactorOf(base, cand);
+    if (rel < QUIZ_ZOOM_MIN || rel > QUIZ_ZOOM_MAX) return;
+    store.view = cand;
+  }
+  owner.redraw();
 }
 
 function newQuizQuestion(fromExplorer = false) {
@@ -1268,6 +1329,7 @@ function newQuizQuestion(fromExplorer = false) {
   quiz.locked = false;
   quiz.attempt = 0;
   quiz.wrong = null;
+  quiz.view = null;                          // neue Aufgabe, sauberer Ausschnitt
   quiz.options = [quiz.answer, ...MFE.quiz.makeDistractors(quiz.form, quiz.answer, 3)]
     .sort(() => Math.random() - 0.5);
   const fb = $('#quiz-feedback'); fb.textContent = ''; fb.className = 'feedback';
@@ -1291,7 +1353,7 @@ function drawQuiz() {
   const sc = {
     curves: [{ form: quiz.form, values: quiz.answer, color: '--graph' }],
     activeIndex: 0,
-    view: quizView(quiz.form),
+    view: taskView(quiz, quiz.form),
     opts: BLANK_OPTS,
     scale: sceneScale()
   };
@@ -1357,11 +1419,12 @@ function answerQuiz(index) {
 /* ==========================================================================
    11 · UEBEN - Modus "Nachbauen"
    ========================================================================== */
-const practice = { form: 'linear', target: null, ctx: null };
+const practice = { form: 'linear', target: null, ctx: null, view: null };
 
 function newPracticeTask() {
   practice.form = curve(0).form;
   practice.target = MFE.quiz.randomValues(practice.form);
+  practice.view = null;                      // neue Aufgabe, sauberer Ausschnitt
   const fresh = makeCurve(practice.form);
   practice.ctx = {
     form: practice.form, values: fresh.values, bounds: fresh.bounds, prefix: 'pr-', play: false,
@@ -1379,7 +1442,7 @@ function drawPractice() {
     curves: [{ form: practice.form, values: practice.ctx.values, color: '--graph' }],
     ghost: { form: practice.form, values: practice.target },
     activeIndex: 0,
-    view: quizView(practice.form),
+    view: taskView(practice, practice.form),
     opts: BLANK_OPTS,
     scale: sceneScale()
   });
@@ -1670,7 +1733,7 @@ function renderProgress() {
    erklaert. makeTrap() liefert null, wenn zu den gewuerfelten Werten keine
    Falle passt - dann wird neu gewuerfelt, nicht abgebrochen.
    ========================================================================== */
-const trap = { task: null, locked: false, graph: null };
+const trap = { task: null, locked: false, graph: null, view: null };
 
 /** Antworttext: manche Antworten sind Schluessel, keine fertigen Zahlen. */
 const trapLabel = (a) => (a.raw ? t(a.label) : a.label);
@@ -1685,6 +1748,7 @@ function newTrapTask() {
     trap.task = MFE.diagnose.makeTrap(form, MFE.quiz.randomValues(form));
   }
   trap.locked = false;
+  trap.view = null;
 
   const fb = $('#trap-feedback'); fb.textContent = ''; fb.className = 'feedback';
   $('#trap-note').hidden = true;
@@ -1708,7 +1772,7 @@ function drawTrap() {
   drawScene(trap.graph, {
     curves: [{ form: trap.task.form, values: trap.task.values, color: '--graph' }],
     activeIndex: 0,
-    view: MFE.quiz.viewFor(trap.task.form),
+    view: taskView(trap, trap.task.form),
     opts: BLANK_OPTS,
     scale: sceneScale()
   });
@@ -1729,7 +1793,9 @@ function answerTrap(index) {
   const fb = $('#trap-feedback');
   fb.className = 'feedback ' + (a.correct ? 'ok' : 'err');
   // Der eigentliche Zweck dieses Modus: nicht "falsch", sondern der Grund.
-  fb.textContent = a.correct ? t('quiz.right') : t('why.' + a.mis);
+  fb.textContent = a.correct ? t('quiz.right')
+                 : a.mis ? t('why.' + a.mis)
+                 : t('quiz.wrong');
 
   /* Der Merksatz steht IMMER da, auch bei richtiger Antwort - er ist das,
      was von der Aufgabe uebrig bleiben soll. Getrennt vom Urteil, damit er
@@ -2533,6 +2599,15 @@ function bindEvents() {
     const b = e.target.closest('.quiz-opt');
     if (b) raceAnswer(Number(b.dataset.pos));
   });
+  /* Ein Zuhoerer fuer alle drei Ausschnitt-Bausteine. Klassen statt IDs:
+     drei gleiche Knopfgruppen mit neun IDs waeren nur Verwaltungsaufwand. */
+  $('#tab-quiz').addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-mini [data-act]');
+    if (!btn) return;
+    const box = btn.closest('.view-mini');
+    adjustQuizView(box.dataset.mode, btn.dataset.act);
+  });
+
   $('#btn-trap-new').addEventListener('click', newTrapTask);
   $('#trap-options').addEventListener('click', (e) => {
     const b = e.target.closest('.quiz-opt');
@@ -2571,12 +2646,17 @@ function bindEvents() {
   const onResize = debounce(() => {
     measureChrome();
     if (mainGraph.measure()) render();
+    // Alle Uebungs-Canvas mitnehmen. Wettkampf und Fehlersuche fehlten hier:
+    // beim Drehen des Geraets blieb ihr Graph verzerrt stehen.
     drawQuiz(); drawPractice(); drawThumbs();
+    if (race.on) drawRace();
+    if (trap.task) drawTrap();
   }, 100);
 
   if ('ResizeObserver' in window) {
     const ro = new ResizeObserver(onResize);
-    ['#graph-canvas', '#quiz-canvas', '#practice-canvas', '.app-header'].forEach(s => {
+    ['#graph-canvas', '#quiz-canvas', '#practice-canvas', '#race-canvas',
+     '#trap-canvas', '.app-header'].forEach(s => {
       const el = $(s);
       if (el) ro.observe(el);
     });

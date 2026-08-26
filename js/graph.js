@@ -77,6 +77,19 @@ function zoomView(view, factor, ax, ay, axis = 'both') {
   return normalizeView(v);
 }
 
+/**
+ * Wie weit ist `view` gegenueber `base` herausgezoomt?
+ * 1 = Standardausschnitt, 2 = doppelt so weit, 0.5 = doppelt so nah.
+ * Gebraucht, um den Zoom dort zu begrenzen, wo ein verlorener Ausschnitt
+ * niemandem hilft - im Ueben-Reiter.
+ */
+function zoomFactorOf(base, view) {
+  const bx = base.xMax - base.xMin;
+  const vx = view.xMax - view.xMin;
+  if (!(bx > 0) || !(vx > 0)) return 1;
+  return vx / bx;
+}
+
 function panView(view, dx, dy) {
   return normalizeView({
     xMin: view.xMin + dx, xMax: view.xMax + dx,
@@ -581,7 +594,7 @@ function drawScene(g, scene) {
 
 return {
   Graph, drawScene, findZeros, niceStep, piLabel, derivative,
-  normalizeView, zoomView, panView, fitY, labelDigits,
+  normalizeView, zoomView, panView, zoomFactorOf, fitY, labelDigits,
   DEFAULT_VIEW, MIN_SPAN, MAX_SPAN, CURVE_COLORS, paramColor
 };
 })();

@@ -793,9 +793,81 @@ expect(!$('#trap-prompt').textContent.startsWith('mis.'), 'Die Frage ist ueberse
 }
 expect(!$('#trap-note').hidden, 'Der Merksatz erscheint nach der Antwort');
 expect(!$('#trap-note').textContent.startsWith('note.'), 'Der Merksatz ist uebersetzt');
+expect($('#trap-note').getAttribute('aria-live') === 'polite', 'Der Merksatz wird vorgelesen');
 click('#btn-trap-new'); await tick();
 expect($$('#trap-options .quiz-opt').every(b => !b.disabled), 'Die naechste Aufgabe ist wieder anklickbar');
 expect($('#trap-note').hidden, 'Bei der neuen Aufgabe ist der Merksatz wieder weg');
+
+
+/* --- Ausschnitt im Ueben-Reiter (Variante C) ------------------------------
+   Anlass: Zuordnen und Nachbauen benutzten den Ausschnitt des Explorers.
+   Wer dort hineingezoomt hatte, bekam die Aufgabe unbrauchbar vorgesetzt.
+   Unbehandelte Ausnahmen lassen den Lauf ohnehin fehlschlagen - hier wird
+   deshalb geprueft, was sich tatsaechlich beobachten laesst. */
+
+// Die reine Rechnung zuerst, ohne Oberflaeche.
+{
+  const { zoomView } = window.MFE.graph;
+  const v0 = window.MFE.quiz.viewFor('linear');
+  expect(v0.xMax > v0.xMin && v0.yMax > v0.yMin, 'Der Standardausschnitt ist gueltig');
+
+  const nah = zoomView(v0, 0.8, 0, 0);
+  expect(nah.xMax - nah.xMin < v0.xMax - v0.xMin, 'Hineinzoomen verkleinert die Spannweite');
+  const weit = zoomView(v0, 1.25, 0, 0);
+  expect(weit.xMax - weit.xMin > v0.xMax - v0.xMin, 'Herauszoomen vergroessert sie');
+
+  // Der Mittelpunkt bleibt stehen, es wird nicht verschoben.
+  const mitte = (v) => (v.xMin + v.xMax) / 2;
+  expect(Math.abs(mitte(zoomView(v0, 0.8, mitte(v0), 0)) - mitte(v0)) < 1e-9,
+         'Zoomen um die Mitte verschiebt den Ausschnitt nicht');
+
+  // Beliebig oft klicken darf den Ausschnitt nicht unbrauchbar machen.
+  let eng = v0, weit2 = v0;
+  for (let i = 0; i < 40; i++) {
+    eng = zoomView(eng, 0.8, 0, 0);
+    weit2 = zoomView(weit2, 1.25, 0, 0);
+  }
+  expect(eng.xMax - eng.xMin > 0, 'Auch nach 40 Klicks bleibt eine Spannweite uebrig');
+  expect(Number.isFinite(weit2.xMin) && Number.isFinite(weit2.xMax), 'Und sie bleibt endlich');
+
+  // Der Massstab gegenueber dem Standard - Grundlage der Zoomgrenzen im Quiz.
+  const { zoomFactorOf } = window.MFE.graph;
+  expect(Math.abs(zoomFactorOf(v0, v0) - 1) < 1e-9, 'Der Standard hat den Massstab 1');
+  expect(zoomFactorOf(v0, weit) > 1, 'Herausgezoomt ist der Massstab groesser als 1');
+  expect(zoomFactorOf(v0, nah) < 1, 'Hineingezoomt kleiner als 1');
+  expect(zoomFactorOf({ xMin: 0, xMax: 0 }, v0) === 1, 'Entarteter Ausschnitt liefert 1 statt Unendlich');
+  expect(zoomFactorOf(v0, zoomView(v0, 2, 0, 0)) > 1.9, 'Der Massstab folgt dem Zoomfaktor');
+  expect(!!zoomView(window.MFE.quiz.viewFor('sinus'), 0.8, 0, 0).piAxis,
+         'Die pi-Teilung ueberlebt das Zoomen');
+}
+
+// Und jetzt an der Oberflaeche: der Explorer darf die Aufgabe nicht mehr verstellen.
+click('#btn-home'); await tick();
+click('.fn-card[data-category="linear"]'); await tick();
+for (let i = 0; i < 6; i++) { click('#btn-zoom-in'); await tick(); }
+click('#tab-btn-quiz'); await tick();
+click('#quiz-modes [data-mode="match"]'); await tick();
+
+expect($$('#mode-match .view-mini [data-act]').length === 3, 'Drei Knoepfe: hinein, heraus, zurueck');
+expect(!$('#mode-race').querySelector('.view-mini'), 'Im Wettkampf bewusst keine Zoomknoepfe');
+for (const m of ['match', 'build', 'trap']) {
+  expect($(`#mode-${m} .view-mini`), `Ausschnitt-Bedienung im Modus ${m}`);
+  expect($(`#mode-${m} .view-mini`).dataset.mode === m, `Der Baustein in ${m} kennt seinen Modus`);
+}
+// Jeder Knopf muss vorlesbar sein - es sind reine Symbole.
+for (const b of $$('#mode-match .view-mini [data-act]')) {
+  expect((b.getAttribute('aria-label') || '').length > 1, 'Zoomknopf hat eine Beschriftung');
+}
+
+click('#mode-match .view-mini [data-act="in"]'); await tick();
+click('#mode-match .view-mini [data-act="home"]'); await tick();
+click('#quiz-modes [data-mode="build"]'); await tick();
+click('#mode-build .view-mini [data-act="in"]'); await tick();
+click('#btn-new-task'); await tick();
+click('#quiz-modes [data-mode="trap"]'); await tick();
+click('#mode-trap .view-mini [data-act="out"]'); await tick();
+click('#btn-trap-new'); await tick();
+click('#quiz-modes [data-mode="match"]'); await tick();
 
 // --- Tastaturbedienung und Beschreibung des Graphen ------------------------
 click('#btn-home'); await tick();
