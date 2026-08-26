@@ -316,6 +316,7 @@
       <button class="seg-btn is-active" type="button" data-mode="match" aria-pressed="true" data-i18n="quiz.mode.match">Zuordnen</button>
       <button class="seg-btn" type="button" data-mode="build" aria-pressed="false" data-i18n="quiz.mode.build">Nachbauen</button>
       <button class="seg-btn" type="button" data-mode="race" aria-pressed="false" data-i18n="quiz.mode.race">Wettkampf</button>
+      <button class="seg-btn" type="button" data-mode="trap" aria-pressed="false" data-i18n="trap.title">Fehlersuche</button>
     </div>
 
     <!-- Modus 1: Gleichung dem Graphen zuordnen -->
@@ -395,6 +396,26 @@
           <button id="btn-race-code" class="btn-secondary" type="button" data-i18n="race.showCode">Ergebnis zeigen</button>
         </div>
       </div>
+    </div>
+
+    <!-- Modus 4: Fehlersuche. Die falschen Antworten sind hier keine
+         Zufallszahlen, sondern genau die Denkfehler aus diagnose.js. Wer
+         danebengreift, bekommt nicht "falsch", sondern die Erklaerung, was
+         er sich vermutlich gedacht hat. -->
+    <div id="mode-trap" hidden>
+      <div class="quiz-head">
+        <h2 data-i18n="trap.lead">Aufgaben, bei denen die falschen Antworten typische Denkfehler sind.</h2>
+      </div>
+      <div class="quiz-body">
+        <canvas id="trap-canvas" class="graph-canvas" role="img" data-i18n-aria="a11y.quizCanvas"></canvas>
+        <div>
+          <p id="trap-prompt" class="trap-prompt"></p>
+          <div id="trap-options" class="options-grid"></div>
+          <p id="trap-feedback" class="feedback" role="status" aria-live="polite"></p>
+          <p id="trap-note" class="trap-note" hidden></p>
+        </div>
+      </div>
+      <button id="btn-trap-new" class="btn-secondary" type="button" data-i18n="trap.new">Neue Aufgabe</button>
     </div>
 
     <!-- Stand pro Funktionsklasse. Sagt mehr als eine Punktzahl je Sitzung. -->
@@ -636,6 +657,7 @@
 <script src="js/i18n.js"></script>
 <script src="js/functions.js"></script>
 <script src="js/graph.js"></script>
+<script src="js/diagnose.js"></script>
 <script src="js/nav.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/qr.js"></script>

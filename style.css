@@ -966,3 +966,20 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
    "verborgen" darf von nichts uebersteuert werden.
    ========================================================================== */
 [hidden] { display: none !important; }
+
+/* --- Fehlersuche: die Frage steht ueber den Antworten --- */
+.trap-prompt {
+  font-weight: 650;
+  margin-bottom: .6rem;
+  line-height: 1.4;
+}
+
+/* --- Merksatz nach einer Falle: ruhig, kein Urteil --- */
+.trap-note {
+  margin-top: .6rem;
+  padding: .6rem .75rem;
+  border-left: 4px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  line-height: 1.45;
+}

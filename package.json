@@ -15,10 +15,11 @@
     "android:open": "npm run android:sync && npx cap open android",
     "smoke": "node tools/smoke.mjs",
     "smoke:lite": "node tools/smoke.mjs lite",
-    "test": "npm run check && npm run qr && npm run codec && npm run smoke && npm run smoke:lite",
+    "test": "npm run check && npm run qr && npm run codec && npm run diagnose && npm run smoke && npm run smoke:lite",
     "qr": "node tools/qr-selftest.mjs",
     "codec": "node tools/quiz-codec.mjs",
-    "icons:android": "python3 tools/make_android_icons.py"
+    "icons:android": "python3 tools/make_android_icons.py",
+    "diagnose": "node tools/diagnose-test.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.0",
