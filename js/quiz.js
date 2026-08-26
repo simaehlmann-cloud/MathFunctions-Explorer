@@ -409,7 +409,6 @@ function randomValues(form) {
    dessen Term identisch aussieht (a = 1 statt a = 1), wird verworfen; wenn
    die Fehlvorstellungen nicht genug hergeben, fuellt der alte Zufallsweg auf.
    -------------------------------------------------------------------------- */
-const roleOf = (form, id) => FUNCTIONS[form]?.params.find(p => p.id === id)?.role ?? '';
 const paramsWith = (form, role) => FUNCTIONS[form].params.filter(p => p.role === role);
 
 /** Erzeugt die typischen Verwechslungen als fertige Wertesaetze. */
@@ -517,77 +516,36 @@ function sameCurve(form, a, b) {
 }
 
 /* --------------------------------------------------------------------------
-   Diagnose
-   Vergleicht die gewaehlte Antwort mit der richtigen und benennt den Fehler,
-   statt nur "falsch" zu sagen. Die Reihenfolge ist die Reihenfolge der
-   Aussagekraft: eine Vertauschung erklaert mehr als "Vorzeichen falsch",
-   und beides erklaert mehr als "knapp daneben".
-   Rueckgabe: fertiger Text oder '' - der Aufrufer entscheidet, ob er ihn
-   anzeigt.
+   Fehleranalyse - Text zu den Befunden aus diagnose.js
+   --------------------------------------------------------------------------
+   Die Analyse selbst steht in diagnose.js: sie ist frei von DOM und Sprache
+   und laesst sich ohne Browser pruefen. Hier entsteht nur der Satz dazu.
+
+   Frueher stand an dieser Stelle eine zweite, eigene diagnose(). Zwei
+   Systeme, die dasselbe erkennen, driften auseinander - das hier ist die
+   Anbindung an das gruendlichere.
    -------------------------------------------------------------------------- */
-function diagnose(form, chosen, correct) {
-  const d = FUNCTIONS[form];
-  if (!d || !chosen || !correct) return '';
+
+/** Ein einzelner Befund als Satz. */
+function findingText(form, f) {
   const sym = (id) => host.symbolOf(id, form);
-  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const vars = { ...f.vars, s: sym(f.ids[0]), s2: f.ids[1] ? sym(f.ids[1]) : '' };
+  return t('find.' + f.kind, vars);
+}
 
-  const diff = d.params.filter(p => !near(chosen[p.id], correct[p.id]));
-  if (!diff.length) return '';
-
-  // Vertauschung: genau zwei Parameter, ueber Kreuz gleich
-  if (diff.length === 2) {
-    const [p, q] = diff;
-    if (near(chosen[p.id], correct[q.id]) && near(chosen[q.id], correct[p.id])) {
-      if (roleOf(form, p.id) === 'root' || roleOf(form, q.id) === 'root') {
-        return t('diag.generic');           // x1/x2 vertauscht ist dieselbe Kurve
-      }
-      return t('diag.swap', { s: sym(p.id), s2: sym(q.id) });
-    }
-    // Streckung und Verschiebung gegeneinander verrechnet
-    const stretch = diff.find(x => x.role === 'stretch');
-    const shift = diff.find(x => x.role === 'shiftX' || x.role === 'shiftY');
-    if (stretch && shift) return t('diag.stretchShift', { s: sym(stretch.id) });
-  }
-
-  /* Nullstelle mit y-Achsenabschnitt verwechselt: bei der Geraden liegt der
-     Verdacht nahe, wenn der gewaehlte Achsenabschnitt genau die Nullstelle
-     der richtigen Geraden ist. */
-  if (form === 'linear' && near(chosen.m, correct.m) && correct.m !== 0) {
-    const root = -correct.b / correct.m;
-    if (near(chosen.b, Math.round(root * 100) / 100) && !near(root, correct.b)) return t('diag.rootYint');
-  }
-
-  if (diff.length === 1) {
-    const p = diff[0];
-    const cv = chosen[p.id], tv = correct[p.id];
-    const role = p.role || '';
-
-    if (near(cv, -tv) && tv !== 0) {
-      if (role === 'shiftX') return t('diag.innerShift', { s: mfmt(tv) });
-      if (role === 'shiftY') return t('diag.shiftDir', { s: sym(p.id) });
-      if (role === 'slope') return t('diag.slopeSign');
-      return t('diag.sign', { s: sym(p.id) });
-    }
-    if (tv !== 0 && Math.abs(tv) > 0.05 && near(Math.round(cv * 100) / 100, Math.round((1 / tv) * 100) / 100)) {
-      return t('diag.reciprocal', { s: sym(p.id) });
-    }
-    if (role === 'stretch' && near(Math.abs(cv), Math.abs(tv))) return t('diag.sign', { s: sym(p.id) });
-    if (near(Math.abs(cv), Math.abs(tv))) return t('diag.magnitude', { s: sym(p.id) });
-
-    const delta = Math.abs(cv - tv);
-    if (delta <= Math.max(p.step * 6, 1.01)) {
-      return t('diag.offBy', { s: sym(p.id), d: mfmt(delta) });
-    }
-    return t('diag.magnitude', { s: sym(p.id) });
-  }
-
-  // Mehr als zwei Abweichungen: Steigung und Achsenabschnitt getrennt
-  // benennen hilft mehr als eine Sammelaussage.
-  const first = diff.find(p => p.role === 'slope' || p.role === 'stretch') || diff[0];
-  if (near(chosen[first.id], -correct[first.id]) && correct[first.id] !== 0) {
-    return first.role === 'slope' ? t('diag.slopeSign') : t('diag.sign', { s: sym(first.id) });
-  }
-  return t('diag.generic');
+/**
+ * Vergleicht zwei Wertesaetze und benennt den Denkfehler.
+ * Wird an drei Stellen gebraucht: beim Nachbauen, bei einer falsch
+ * gewaehlten Kurve im Zuordnen und im Wettkampf.
+ * Rueckgabe: fertiger Satz oder '' - der Aufrufer entscheidet ueber die
+ * Anzeige. Hoechstens zwei Befunde, sonst wird aus der Rueckmeldung eine
+ * Maengelliste, die niemand liest.
+ */
+function diagnose(form, chosen, correct) {
+  if (!FUNCTIONS[form] || !chosen || !correct) return '';
+  const res = MFE.diagnose?.analyseBuild(form, correct, chosen);
+  if (!res || res.solved || !res.findings.length) return '';
+  return res.findings.slice(0, 2).map(f => findingText(form, f)).join(' ');
 }
 
 const eqText = (form, v, name = 'f') => `${name}(x) = ${FUNCTIONS[form].rhs(v)}`;
@@ -1858,7 +1816,9 @@ return {
   buildRandomQuiz, showQr, resultText,
   loadAll, getQuiz, sanitizeQuiz, decodeQuiz, encodeQuiz, linkFor,
   randomValues, makeDistractors, eqText, TYPES,
-  // v6.6: von app.js mitbenutzt (Ueben-Reiter, Wettkampf, Stand)
+  /* v6.6 - von app.js mitbenutzt: Ueben-Reiter / Wettkampf / Stand.
+     Kein //-Kommentar und keine Kommas darin: check.mjs trennt die
+     Exportliste an Kommas und uebersieht sonst den ersten Namen dahinter. */
   diagnose, optionButton, viewFor, drawTaskGraph,
   loadProgress, noteResult, noteBest, bestOf, resetProgress
 };

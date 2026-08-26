@@ -1663,6 +1663,84 @@ function renderProgress() {
   }
 }
 
+/* ==========================================================================
+   11c · UEBEN - Modus "Fehlersuche"
+   --------------------------------------------------------------------------
+   Der Katalog steht in diagnose.js. Hier wird nur gezeichnet, angeklickt und
+   erklaert. makeTrap() liefert null, wenn zu den gewuerfelten Werten keine
+   Falle passt - dann wird neu gewuerfelt, nicht abgebrochen.
+   ========================================================================== */
+const trap = { task: null, locked: false, graph: null };
+
+/** Antworttext: manche Antworten sind Schluessel, keine fertigen Zahlen. */
+const trapLabel = (a) => (a.raw ? t(a.label) : a.label);
+
+function newTrapTask() {
+  const forms = raceForms();
+  trap.task = null;
+  // Bis zu 30 Versuche: die Bedingungen der Fallen (needs) schnappen nicht
+  // bei jedem Wertesatz zu.
+  for (let i = 0; i < 30 && !trap.task; i++) {
+    const form = forms[Math.floor(Math.random() * forms.length)] ?? 'linear';
+    trap.task = MFE.diagnose.makeTrap(form, MFE.quiz.randomValues(form));
+  }
+  trap.locked = false;
+
+  const fb = $('#trap-feedback'); fb.textContent = ''; fb.className = 'feedback';
+  $('#trap-note').hidden = true;
+  const box = $('#trap-options');
+  box.replaceChildren();
+
+  if (!trap.task) {
+    $('#trap-prompt').textContent = t('trap.none');
+    return;
+  }
+  $('#trap-prompt').textContent = t(trap.task.promptKey, trap.task.promptVars);
+  trap.task.answers.forEach((a, i) => box.append(MFE.quiz.optionButton(i, trapLabel(a))));
+  drawTrap();
+}
+
+function drawTrap() {
+  const cv = $('#trap-canvas');
+  if (!cv || !trap.task) return;
+  if (!trap.graph || trap.graph.canvas !== cv) trap.graph = new Graph(cv);
+  if (!trap.graph.measure()) return;
+  drawScene(trap.graph, {
+    curves: [{ form: trap.task.form, values: trap.task.values, color: '--graph' }],
+    activeIndex: 0,
+    view: MFE.quiz.viewFor(trap.task.form),
+    opts: BLANK_OPTS,
+    scale: sceneScale()
+  });
+}
+
+function answerTrap(index) {
+  if (!trap.task || trap.locked) return;
+  const a = trap.task.answers[index];
+  if (!a) return;
+  trap.locked = true;
+
+  $$('#trap-options .quiz-opt').forEach((b, i) => {
+    b.disabled = true;
+    if (trap.task.answers[i].correct) b.classList.add('is-correct');
+    else if (i === index) b.classList.add('is-wrong');
+  });
+
+  const fb = $('#trap-feedback');
+  fb.className = 'feedback ' + (a.correct ? 'ok' : 'err');
+  // Der eigentliche Zweck dieses Modus: nicht "falsch", sondern der Grund.
+  fb.textContent = a.correct ? t('quiz.right') : t('why.' + a.mis);
+
+  /* Der Merksatz steht IMMER da, auch bei richtiger Antwort - er ist das,
+     was von der Aufgabe uebrig bleiben soll. Getrennt vom Urteil, damit er
+     nicht wie ein Tadel wirkt. */
+  $('#trap-note').textContent = t('note.' + trap.task.trap);
+  $('#trap-note').hidden = false;
+
+  MFE.quiz.noteResult(trap.task.form, !!a.correct);
+  renderProgress();
+}
+
 /** Welcher Uebungsmodus ist gerade offen? Aus dem Umschalter gelesen, nicht
  *  aus dem hidden-Attribut der Panels - mit drei Modi waere das eine
  *  Fallunterscheidung, die beim naechsten Modus wieder faellig waere. */
@@ -1672,7 +1750,7 @@ function currentQuizMode() {
 }
 
 function setQuizMode(mode) {
-  if (!['match', 'build', 'race'].includes(mode)) mode = 'match';
+  if (!['match', 'build', 'race', 'trap'].includes(mode)) mode = 'match';
   $$('#quiz-modes .seg-btn').forEach(b => {
     const on = b.dataset.mode === mode;
     b.classList.toggle('is-active', on);
@@ -1681,6 +1759,7 @@ function setQuizMode(mode) {
   $('#mode-match').hidden = mode !== 'match';
   $('#mode-build').hidden = mode !== 'build';
   $('#mode-race').hidden = mode !== 'race';
+  $('#mode-trap').hidden = mode !== 'trap';
   // Ein laufender Wettkampf endet beim Verlassen des Modus - eine Uhr, die
   // im Hintergrund weiterlaeuft, waere eine Falle.
   if (mode !== 'race' && race.on) stopRace({ keepSummary: false });
@@ -1688,7 +1767,8 @@ function setQuizMode(mode) {
   requestAnimationFrame(() => {
     if (mode === 'match') { if (!quiz.answer) newQuizQuestion(); else drawQuiz(); }
     else if (mode === 'build') { if (!practice.target) newPracticeTask(); else drawPractice(); }
-    else { renderRaceBest(); if (race.on) drawRace(); }
+    else if (mode === 'race') { renderRaceBest(); if (race.on) drawRace(); }
+    else { if (!trap.task) newTrapTask(); else drawTrap(); }
   });
 }
 
@@ -2452,6 +2532,11 @@ function bindEvents() {
   $('#race-options').addEventListener('click', (e) => {
     const b = e.target.closest('.quiz-opt');
     if (b) raceAnswer(Number(b.dataset.pos));
+  });
+  $('#btn-trap-new').addEventListener('click', newTrapTask);
+  $('#trap-options').addEventListener('click', (e) => {
+    const b = e.target.closest('.quiz-opt');
+    if (b) answerTrap(Number(b.dataset.pos));
   });
   $('#btn-race-code').addEventListener('click', showRaceCode);
   $('#btn-race-close').addEventListener('click', () => $('#race-dialog').close());

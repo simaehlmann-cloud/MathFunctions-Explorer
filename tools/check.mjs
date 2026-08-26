@@ -11,7 +11,7 @@
 
    Aufruf:  npm run check
    ========================================================================== */
-import { readFile, access } from 'node:fs/promises';
+import { readFile, access, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -279,7 +279,8 @@ const UMLAUT_OK = new Set([
   'Aktuelle', 'aktueller', 'Achsenausschnitt', 'anfassen', 'Anfassen', 'angepasst',
   'Aussage', 'Ausschnitt', 'bauen', 'dass', 'Fassung', 'Frequenz', 'Funktionsklasse',
   'grauen', 'Impressum', 'Klasse', 'Klassenarbeiten', 'Koeffizient', 'muss',
-  'Nachbauen', 'neue', 'Neue', 'Neues', 'Passend', 'passt', 'smaehlmann'
+  'Nachbauen', 'neue', 'Neue', 'Neues', 'Passend', 'passt', 'smaehlmann',
+  'zuerst'
 ]);
 
 {
@@ -452,6 +453,36 @@ if (await exists('js/diagnose.js')) {
   }
   for (const m of diag.matchAll(/kind:\s*(?:isShift \?\s*)?'(\w+)'\s*:\s*'(\w+)'/g)) {
     for (const k of [m[1], m[2]]) if (!de.has('find.' + k)) note(`Fehleranalyse: der Text find.${k} fehlt`);
+  }
+}
+
+/* --- Liegt Code im Projekt, der nirgends geladen wird? --------------------
+   Der Anlass: js/diagnose.js war in index.html nicht eingebunden. Die Datei
+   lag vollstaendig im Repo, war aber in keiner Ausgabe der App enthalten.
+
+   Die Pruefung weiter oben vergleicht index.html mit sw.js und dem Build -
+   sie greift aber nur fuer Dateien, die index.html ueberhaupt laedt. Genau
+   deshalb hat sie geschwiegen. Hier die andere Richtung: jede Datei in js/
+   muss auch geladen werden. Fehlender Code faellt nur auf, wenn jemand nach
+   ihm sucht.                                                               */
+const loadedScripts = [...html.matchAll(/<script src="(js\/[^"]+)"><\/script>/g)].map(m => m[1]);
+for (const f of (await readdir(path.join(ROOT, 'js'))).filter(f => f.endsWith('.js')).map(f => 'js/' + f)) {
+  if (!loadedScripts.includes(f)) {
+    note(`index.html: ${f} liegt im Projekt, wird aber von keinem <script> geladen`);
+  }
+}
+
+/* --- Ladereihenfolge -----------------------------------------------------
+   Die Dateien nehmen den Namensraum schon im Kopf auseinander
+   (const { FUNCTIONS } = MFE.math). Wer zu frueh geladen wird, bekommt
+   undefined - und der Fehler zeigt sich erst irgendwo weit spaeter.        */
+const scriptOrder = (f) => loadedScripts.indexOf(f);
+for (const [file, needs] of [['js/graph.js', 'js/functions.js'],
+                             ['js/diagnose.js', 'js/functions.js'],
+                             ['js/quiz.js', 'js/diagnose.js'],
+                             ['js/app.js', 'js/quiz.js']]) {
+  if (scriptOrder(file) >= 0 && scriptOrder(needs) >= 0 && scriptOrder(file) < scriptOrder(needs)) {
+    note(`index.html: ${file} wird vor ${needs} geladen, braucht es aber beim Auswerten`);
   }
 }
 

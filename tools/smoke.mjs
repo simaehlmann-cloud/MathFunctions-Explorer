@@ -128,7 +128,7 @@ if (!window.navigator.clipboard) {
 }
 
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
-               'js/graph.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
+               'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 for (const f of files) {
   let src = readFileSync(path.join(ROOT, f), 'utf8');
   if (LITE && f === 'js/licence.js') src = src.replace(/const DEV_EDITION = '\w+';/, "const DEV_EDITION = 'lite';");
@@ -709,6 +709,93 @@ click('#tab-btn-quiz'); await tick();
 click('#btn-progress-reset'); await tick();
 expect(window.localStorage.getItem('mfe:progress') === null, 'Der Stand laesst sich zuruecksetzen');
 click('#tab-btn-explorer'); await tick();
+
+/* ==========================================================================
+   diagnose.js: Einbindung, Fehleranalyse, Fehlersuch-Modus
+   --------------------------------------------------------------------------
+   Diese Pruefungen gibt es, weil die Datei einmal komplett abgehaengt war -
+   nicht geladen, ohne Texte, nicht im Service Worker, nicht im Build. Kein
+   einziger Test hat das gemerkt.
+   ========================================================================== */
+expect(typeof window.MFE.diagnose === 'object', 'diagnose.js ist geladen');
+for (const fn of ['makeTrap', 'analyseBuild', 'sampleTable', 'forForm']) {
+  expect(typeof window.MFE.diagnose[fn] === 'function', `diagnose.${fn}() vorhanden`);
+}
+
+// Die Helfer, die diagnose.js aus MFE.math bezieht
+expect(typeof window.MFE.math.tolerance === 'function', 'MFE.math.tolerance() vorhanden');
+{
+  const tol = window.MFE.math.tolerance;
+  expect(tol(0, 0.5) > 0, 'Toleranz ist immer positiv');
+  expect(tol(3, 0.5) >= 0.25, 'Toleranz mindestens eine halbe Schrittweite');
+  expect(tol(120, 1) <= 1, 'Toleranz bleibt gedeckelt');
+  expect(Number.isFinite(tol(2)), 'Toleranz auch ohne Schrittweite');
+}
+{
+  const F = window.MFE.math.FUNCTIONS;
+  expect(Array.isArray(F.linear.shiftParams), 'shiftParams sind gesetzt');
+  expect(F.quad_vertex.shiftParams.includes('d'), 'd verschiebt bei der Scheitelpunktform');
+  expect(!F.quad_vertex.shiftParams.includes('a'), 'a verschiebt nicht');
+  // Jeder Eintrag muss ein echter Parameter der Form sein.
+  for (const [name, d] of Object.entries(F)) {
+    const ids = d.params.map(p => p.id);
+    expect(d.shiftParams.every(id => ids.includes(id)), `shiftParams von ${name} sind echte Parameter`);
+  }
+}
+
+// Jede Fehlvorstellung im Katalog braucht einen Erklaerungstext.
+{
+  const src = readFileSync(path.join(ROOT, 'js/diagnose.js'), 'utf8');
+  const ids = [...new Set([...src.matchAll(/mis: '([\w.]+)'/g)].map(m => m[1]))];
+  expect(ids.length > 10, 'Der Fehlvorstellungskatalog ist gefuellt');
+  const fehlend = ids.filter(id => window.MFE.i18n.t('why.' + id) === 'why.' + id);
+  expect(fehlend.length === 0, 'Jede Fehlvorstellung hat eine Erklaerung: ' + fehlend.join(', '));
+  // Und jeder Befund der Nachbau-Analyse ebenso.
+  const kinds = ['swapped', 'sign', 'shiftDirection', 'doubled', 'halved', 'reciprocal', 'tooHigh', 'tooLow'];
+  const fehlend2 = kinds.filter(k => window.MFE.i18n.t('find.' + k) === 'find.' + k);
+  expect(fehlend2.length === 0, 'Jeder Befund hat einen Text: ' + fehlend2.join(', '));
+}
+
+// analyseBuild erkennt die klassischen Fehler
+{
+  const A = window.MFE.diagnose.analyseBuild;
+  expect(A('linear', { m: 2, b: 3 }, { m: 3, b: 2 }).findings[0].kind === 'swapped',
+         'Vertauschte Parameter werden erkannt');
+  expect(A('linear', { m: 2, b: 3 }, { m: 2, b: -3 }).findings[0].kind === 'shiftDirection',
+         'Falsche Verschieberichtung wird als solche erkannt, nicht nur als Vorzeichenfehler');
+  expect(A('linear', { m: 2, b: 3 }, { m: -2, b: 3 }).findings[0].kind === 'sign',
+         'Vorzeichenfehler bei der Steigung');
+  expect(A('linear', { m: 2, b: 3 }, { m: 4, b: 3 }).findings[0].kind === 'doubled',
+         'Verdoppelter Wert');
+  expect(A('linear', { m: 2, b: 3 }, { m: 2, b: 3 }).solved, 'Richtiger Nachbau gilt als geloest');
+}
+
+// Der Fehlersuch-Modus haengt an der Oberflaeche
+click('#btn-home'); await tick();
+// Bewusst eine Klasse, die es in beiden Ausgaben gibt - sonst haengt der
+// Test an der Lizenzabfrage statt am Fehlersuch-Modus.
+click('.fn-card[data-category="linear"]'); await tick();
+click('#tab-btn-quiz'); await tick();
+click('#quiz-modes [data-mode="trap"]'); await tick();
+expect(!$('#mode-trap').hidden, 'Fehlersuche ist offen');
+expect($('#mode-match').hidden && $('#mode-race').hidden, 'Die anderen Modi sind zu');
+expect($('#trap-prompt').textContent.length > 0, 'Es steht eine Frage da');
+expect(!$('#trap-prompt').textContent.startsWith('mis.'), 'Die Frage ist uebersetzt');
+{
+  const tiles = $$('#trap-options .quiz-opt');
+  expect(tiles.length >= 2, 'Es gibt Antwortmoeglichkeiten');
+  expect(tiles.every(b => !b.textContent.startsWith('mis.')), 'Alle Antworten sind uebersetzt');
+  click(tiles[0]); await tick();
+  expect(tiles.every(b => b.disabled), 'Nach der Antwort ist gesperrt');
+  const fb = $('#trap-feedback').textContent;
+  expect(fb.length > 0, 'Es gibt eine Rueckmeldung');
+  expect(!fb.startsWith('why.'), 'Die Erklaerung ist uebersetzt, kein roher Schluessel');
+}
+expect(!$('#trap-note').hidden, 'Der Merksatz erscheint nach der Antwort');
+expect(!$('#trap-note').textContent.startsWith('note.'), 'Der Merksatz ist uebersetzt');
+click('#btn-trap-new'); await tick();
+expect($$('#trap-options .quiz-opt').every(b => !b.disabled), 'Die naechste Aufgabe ist wieder anklickbar');
+expect($('#trap-note').hidden, 'Bei der neuen Aufgabe ist der Merksatz wieder weg');
 
 // --- Tastaturbedienung und Beschreibung des Graphen ------------------------
 click('#btn-home'); await tick();

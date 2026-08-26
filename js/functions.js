@@ -423,6 +423,41 @@ const CATEGORY_FORMS = {
   rational: ['rational']
 };
 
+/* --------------------------------------------------------------------------
+   shiftParams
+   diagnose.js unterscheidet beim Vorzeichenfehler zwischen "Vorzeichen
+   gedreht" und "Verschieberichtung verwechselt" - der zweite Fall hat eine
+   konkretere Erklaerung, weil die Ursache fast immer das Minus in (x - c)
+   ist. Dafuer muss die Datei wissen, welche Parameter verschieben.
+
+   Abgeleitet aus den role-Feldern, NICHT als zweite Liste gepflegt: eine
+   handgefuehrte Aufzaehlung waere beim naechsten neuen Parameter still
+   veraltet, und der Fehler faellt niemandem auf - die Analyse meldet dann
+   einfach die unspezifischere Erklaerung.
+   -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   tolerance
+   Wie genau muss ein eingestellter Wert den Zielwert treffen? app.js,
+   quiz.js und diagnose.js holen sich diese Funktion aus MFE.math - sie war
+   dort aber nicht definiert, ein Aufruf endete in "not a function".
+
+   Regel: eine halbe Schrittweite ist die kleinste Einheit, die ein Regler
+   ueberhaupt einstellen kann - enger darf die Schranke nie sein, sonst waere
+   die Aufgabe mit dem Regler unloesbar. Bei grossen Zielwerten kommt ein
+   kleiner relativer Anteil dazu, damit 120 nicht dieselbe absolute Genauig-
+   keit verlangt wie 1,5. Nach oben gedeckelt, damit die Toleranz nicht
+   groesser wird als der Unterschied zwischen zwei sinnvollen Antworten.
+   -------------------------------------------------------------------------- */
+function tolerance(target, step = 0.5) {
+  const s = Number.isFinite(step) && step > 0 ? step : 0.5;
+  const t = Number.isFinite(target) ? Math.abs(target) : 0;
+  return Math.min(s / 2 + t * 0.02, Math.max(s, 1));
+}
+
+for (const d of Object.values(FUNCTIONS)) {
+  d.shiftParams = d.params.filter(p => p.role === 'shiftX' || p.role === 'shiftY').map(p => p.id);
+}
+
 return { clamp, fmt, mfmt, coef, term, bracket, bracketPi, termCoef, tidy,
-         piLabel, parseLoose, FUNCTIONS, CATEGORY_FORMS };
+         piLabel, parseLoose, tolerance, FUNCTIONS, CATEGORY_FORMS };
 })();
