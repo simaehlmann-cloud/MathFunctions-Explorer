@@ -228,7 +228,7 @@ const MIN_MAJOR = {
   'actions/cache': 5, 'actions/upload-artifact': 6, 'actions/download-artifact': 7
 };
 
-for (const wf of ['.github/workflows/android.yml', '.github/workflows/pages.yml']) {
+for (const wf of ['.github/workflows/android.yml', '.github/workflows/ios.yml', '.github/workflows/pages.yml']) {
   if (!(await exists(wf))) continue;
   const lines = (await read(wf)).split('\n');
   let currentUses = null, currentIndent = 0;
@@ -318,6 +318,20 @@ const UMLAUT_OK = new Set([
   }
   if (swVersion !== pkgVersion) {
     note(`Cache-Name in sw.js ist "mfe-v${swVersion}", package.json sagt "${pkgVersion}"`);
+  }
+  // config.xml: Version und Build-Nummern (Haupt*10000 + Neben*100 + Patch)
+  if (await exists('config.xml')) {
+    const cx = await read('config.xml');
+    const cxVer = cx.match(/<widget[^>]*\sversion="([^"]+)"/)?.[1];
+    if (cxVer !== pkgVersion) note(`config.xml: version ist "${cxVer}", package.json sagt "${pkgVersion}"`);
+    const [ma, mi, pa] = pkgVersion.split('.').map(Number);
+    const code = String(ma * 10000 + mi * 100 + pa);
+    for (const attr of ['android-versionCode', 'ios-CFBundleVersion']) {
+      const v = cx.match(new RegExp(`${attr}="([^"]+)"`))?.[1];
+      if (v !== code) note(`config.xml: ${attr} ist "${v}", erwartet ${code} fuer ${pkgVersion}`);
+    }
+  } else {
+    note('config.xml fehlt - ohne sie baut keiner der App-Workflows');
   }
 }
 
@@ -491,6 +505,85 @@ for (const [file, needs] of [['js/graph.js', 'js/functions.js'],
                              ['js/app.js', 'js/quiz.js']]) {
   if (scriptOrder(file) >= 0 && scriptOrder(needs) >= 0 && scriptOrder(file) < scriptOrder(needs)) {
     note(`index.html: ${file} wird vor ${needs} geladen, braucht es aber beim Auswerten`);
+  }
+}
+
+/* --- 14 · App-Huelle (Cordova) und In-App-Kauf ---------------------------
+   Jede dieser Stellen ist ein Rueckweisungsgrund in App Store Connect oder
+   ein stiller Ausfall auf dem Geraet - und keiner davon faellt im Browser auf. */
+{
+  const cx = (await exists('config.xml')) ? await read('config.xml') : '';
+  const lic = await read('js/licence.js');
+  const bil = await read('js/billing.js');
+  const productId = lic.match(/const PRODUCT_ID = '([^']+)'/)?.[1];
+  const appId = cx.match(/<widget[^>]*\sid="([^"]+)"/)?.[1];
+  if (!productId) note('js/licence.js: PRODUCT_ID fehlt');
+  else if (appId && !productId.startsWith(appId + '.')) {
+    note(`Produkt-ID "${productId}" beginnt nicht mit der Bundle-ID "${appId}." - so legt App Store Connect sie nicht an`);
+  }
+  // Plugin vollstaendig und unter dem Namen erreichbar, den billing.js erwartet
+  const PL = 'plugins-src/cordova-plugin-mfe-store';
+  for (const f of ['plugin.xml', 'package.json', 'www/mfe-store.js',
+                   'src/ios/MFEStore.swift', 'src/ios/MFEStore-Bridging-Header.h']) {
+    if (!(await exists(`${PL}/${f}`))) note(`${PL}/${f} fehlt`);
+  }
+  // Vorhanden genuegt nicht: eine zu breite .gitignore-Regel (www/) hat die
+  // JS-Datei des Plugins schon einmal still aus dem Commit gehalten. Lokal
+  // lief alles, im Workflow fehlte sie.
+  {
+    const { execFileSync } = await import('node:child_process');
+    for (const f of ['www/mfe-store.js', 'src/ios/MFEStore.swift', 'plugin.xml']) {
+      try {
+        execFileSync('git', ['check-ignore', '-q', `${PL}/${f}`], { stdio: 'ignore' });
+        note(`${PL}/${f} wird von .gitignore ausgeschlossen - landet nicht im Repo`);
+      } catch { /* Exit 1: nicht ignoriert (oder kein Git) - gut */ }
+    }
+  }
+  if (await exists(`${PL}/plugin.xml`)) {
+    const px = await read(`${PL}/plugin.xml`);
+    if (!/<clobbers target="MFEStore"/.test(px)) note(`${PL}/plugin.xml: clobbers-Ziel ist nicht MFEStore - billing.js faende das Plugin nicht`);
+    if (!/ios-package" value="MFEStore"/.test(px)) note(`${PL}/plugin.xml: ios-package ist nicht MFEStore`);
+  }
+  if (!bil.includes('window.MFEStore')) note('js/billing.js: greift nicht auf window.MFEStore zu');
+  if (!cx.includes('../plugins-src/cordova-plugin-mfe-store')) note('config.xml: das Kauf-Plugin ist nicht eingebunden');
+  if (!/ITSAppUsesNonExemptEncryption[\s\S]{0,120}<false\/>/.test(cx)) note('config.xml: ITSAppUsesNonExemptEncryption = false fehlt');
+  if (!cx.includes('NSPhotoLibraryAddUsageDescription')) note('config.xml: NSPhotoLibraryAddUsageDescription fehlt - "Bild sichern" beendet die App');
+  if (!/deployment-target" value="1[5-9]/.test(cx)) note('config.xml: deployment-target unter 15 - StoreKit 2 braucht iOS 15');
+  // Privacy-Manifest
+  const pm = 'res/ios/PrivacyInfo.xcprivacy';
+  if (!(await exists(pm))) note(`${pm} fehlt - App Store Connect weist den Upload zurueck`);
+  else if (!(await read(pm)).includes('CA92.1')) note(`${pm}: Grund CA92.1 fuer UserDefaults fehlt`);
+  // Store-Icon: 1024x1024, ohne Alphakanal (PNG-Farbtyp 2 = RGB)
+  if (!(await exists('icons/icon-1024.png'))) note('icons/icon-1024.png fehlt (python3 tools/make_icons.py)');
+  else {
+    const { readFile: rf } = await import('node:fs/promises');
+    const png = await rf('icons/icon-1024.png');
+    const w = png.readUInt32BE(16), h = png.readUInt32BE(20), colorType = png[25];
+    if (w !== 1024 || h !== 1024) note(`icons/icon-1024.png ist ${w}x${h}, Apple verlangt 1024x1024`);
+    if (colorType !== 2) note(`icons/icon-1024.png hat PNG-Farbtyp ${colorType} - Apple verlangt RGB ohne Alpha (Typ 2)`);
+  }
+  // Android-Icons, die config.xml nennt, muessen vorhanden sein
+  for (const m of cx.matchAll(/(?:src|foreground)="(res\/android\/[^"]+)"/g)) {
+    if (!(await exists(m[1]))) note(`config.xml nennt ${m[1]}, die Datei fehlt (python3 tools/make_android_icons.py)`);
+  }
+  // Capacitor-Reste: dort wuerde die App nie "nativ" erkennen
+  for (const f of SCRIPTS) {
+    if (/window\.Capacitor/.test(await read(f))) note(`${f}: verweist noch auf Capacitor - die App laeuft jetzt unter Cordova`);
+  }
+  // Ein www/ neben config.xml macht das Repo selbst zum Cordova-Projekt
+  // (Cordova nimmt den hoechsten passenden Ordner) - Plattformen landeten
+  // dann im Repo statt in build/.
+  if (/OUT = path\.join\(ROOT, 'www'\)/.test(await read('tools/build-www.mjs'))) {
+    note('tools/build-www.mjs schreibt nach www/ - Cordova haelt dann das Repo fuer das Projekt; dist/ verwenden');
+  }
+  // cordova.js darf nicht im Service Worker stehen (gibt es im Web nicht)
+  if ((await read('sw.js')).includes('cordova.js')) note('sw.js: cordova.js gelistet - im Web ein 404, die Installation scheitert');
+  // Links, die das Geraet verlassen, laufen ueber publicBase()
+  for (const f of SCRIPTS) {
+    const src = await read(f);
+    if (/location\.origin\s*\+\s*location\.pathname/.test(src) && f !== 'js/ui.js') {
+      note(`${f}: baut Links aus location.origin - in der App waere das app://localhost. MFE.ui.publicBase() verwenden`);
+    }
   }
 }
 

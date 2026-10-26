@@ -5,7 +5,10 @@
    am Telefon, aber es faengt tote Verweise und Tippfehler ab, bevor sie auf
    einem Geraet landen.
 
-   Aufruf:  node tools/smoke.mjs [lite]
+   Aufruf:  node tools/smoke.mjs            Browser: voller Umfang
+            node tools/smoke.mjs locked     iOS-App ohne Kauf: Sperren,
+                                            dann Kauf und Wiederherstellen
+                                            mit nachgebautem StoreKit-Plugin
    ========================================================================== */
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { readFileSync } from 'node:fs';
@@ -13,7 +16,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const LITE = process.argv[2] === 'lite';
+/* LITE heisst hier: iOS-App, Pro noch nicht gekauft. Der Name ist aus der
+   Zeit der zwei Ausgaben geblieben; die Pruefungen dahinter gelten weiter. */
+const LITE = process.argv[2] === 'locked';
 
 const errors = [];
 const vc = new VirtualConsole();
@@ -127,11 +132,20 @@ if (!window.navigator.clipboard) {
   window.document.head.appendChild(style);
 }
 
+/* iOS-App nachstellen: build-www.mjs laedt cordova.js vor licence.js, das
+   window.cordova synchron anlegt. Die Plugins kommen erst mit deviceready -
+   genau wie auf dem Geraet. */
+const storeCalls = [];
+let storeOwned = false;
+if (LITE) {
+  window.cordova = { platformId: 'ios' };
+  try { window.localStorage.removeItem('mfe:pro'); } catch {}
+}
+
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
                'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 for (const f of files) {
   let src = readFileSync(path.join(ROOT, f), 'utf8');
-  if (LITE && f === 'js/licence.js') src = src.replace(/const DEV_EDITION = '\w+';/, "const DEV_EDITION = 'lite';");
   try { window.eval(src); }
   catch (e) { errors.push(`${f}: ${e.message}`); }
 }
@@ -1136,12 +1150,14 @@ click('#btn-home'); await tick();
   }
 }
 
-// --- Store-Verweis vor der Veroeffentlichung ------------------------------
-expect(window.MFE.licence.openStore() === 'notyet',
-       'Solange die Pro-Ausgabe nicht im Store ist, wird sie nicht aufgerufen');
-expect(window.MFE.licence.storeLive() === false, 'der Schalter steht auf "noch nicht"');
-expect(window.MFE.billing.status() === 'web' || window.MFE.billing.status() === 'owned',
-       'Billing meldet im Browser einen sinnvollen Zustand');
+// --- Kaufzustand vor deviceready -------------------------------------------
+if (LITE) {
+  expect(window.MFE.billing.status() === 'missing', 'iOS ohne geladenes Plugin: Kauf noch nicht bereit');
+  expect(!window.MFE.licence.isFull(), 'iOS ohne Kauf: kostenloser Umfang');
+} else {
+  expect(window.MFE.billing.status() === 'web', 'Browser: kein Kauf, Status "web"');
+  expect(window.MFE.licence.isFull(), 'Browser: voller Umfang ohne Kauf');
+}
 
 // --- Fassungsnummer sichtbar ----------------------------------------------
 click('#btn-home'); await tick();
@@ -1149,7 +1165,8 @@ click('#card-info'); await tick();
 {
   const line = $('#info-version').textContent;
   expect(/\d+\.\d+\.\d+/.test(line), `die Info-Seite nennt die Fassung ("${line}")`);
-  expect(line.includes(LITE ? 'Lite' : 'Pro'), 'und die Ausgabe');
+  expect(line.includes(LITE ? 'kostenlos' : 'voller Umfang'), `und den Umfang ("${line}")`);
+  expect($('#info-lite-box').hidden === !LITE, 'Kaufen/Wiederherstellen nur in der App ohne Kauf');
 }
 click('[data-back="home"]'); await tick();
 
@@ -1164,12 +1181,12 @@ click('[data-back="home"]'); await tick();
     controller: null
   };
   window.caches = { keys: async () => ['mfe-v1', 'fremd'], delete: async () => true };
-  const prevCap = window.Capacitor;
-  window.Capacitor = { isNativePlatform: () => true };
+  const prevCordova = window.cordova;
+  window.cordova = prevCordova || { platformId: 'android' };
   window.MFE.app?.registerServiceWorker?.();
   await new Promise(r => setTimeout(r, 30));
   expect(unregistered.length === 1, 'ein vorhandener Service Worker wird in der App abgemeldet');
-  window.Capacitor = prevCap;
+  window.cordova = prevCordova;
 }
 
 // --- Schnellwahl auf der Startseite ---------------------------------------
@@ -1259,9 +1276,90 @@ click('#btn-lang-de'); await tick();
 click('#btn-home'); await tick();
 click('.fn-card[data-category="linear"]'); await tick();
 
+/* ---- In-App-Kauf (nur iOS-App) -------------------------------------------
+   Nachgebautes Plugin mit derselben Schnittstelle wie
+   plugins-src/cordova-plugin-mfe-store/www/mfe-store.js. */
+if (LITE) {
+  const PID = window.MFE.licence.PRODUCT_ID;
+  let watcher = null, buyResult = 'purchased', restoreOwned = false;
+  window.MFEStore = {
+    status(id, ok) { storeCalls.push(['status', id]); ok({ owned: storeOwned }); },
+    product(id, ok) { storeCalls.push(['product', id]); ok({ id, price: '3,99 €' }); },
+    buy(id, ok) {
+      storeCalls.push(['buy', id]);
+      if (buyResult === 'purchased') storeOwned = true;
+      ok({ result: buyResult });
+    },
+    restore(id, ok) { storeCalls.push(['restore', id]); ok({ owned: restoreOwned, error: '', cancelled: false }); },
+    watch(cb) { watcher = cb; }
+  };
+  window.document.dispatchEvent(new window.Event('deviceready'));
+  await tick();
+  expect(storeCalls.some(c => c[0] === 'status' && c[1] === PID), 'deviceready: Kaufstand wird bei StoreKit erfragt');
+  expect(watcher !== null, 'deviceready: Aenderungen (Erstattung, Kaufen anfragen) werden beobachtet');
+  expect(window.MFE.billing.price() === '3,99 €', 'Preis kommt aus dem App Store');
+  expect(!window.MFE.licence.isFull(), 'nicht gekauft: weiterhin gesperrt');
+
+  // Gesperrte Funktion -> Dialog mit Preis
+  click('#btn-home'); await tick();
+  click('.fn-card[data-category="quadratic"]'); await tick();
+  expect($('#pro-dialog').open, 'gesperrte Klasse oeffnet den Kauf-Dialog');
+  expect($('#btn-pro-store').textContent.includes('3,99 €'), `Kaufknopf nennt den Preis ("${$('#btn-pro-store').textContent}")`);
+
+  // Kauf abgebrochen -> bleibt gesperrt, keine Fehlermeldung
+  buyResult = 'cancelled';
+  $('#pro-dialog').close('store'); await tick(); await tick();
+  expect(!window.MFE.licence.isFull(), 'abgebrochener Kauf schaltet nichts frei');
+
+  // Wiederherstellen ohne Kauf -> Hinweis, bleibt gesperrt
+  click('#btn-home'); await tick();
+  click('#card-info'); await tick();
+  click('#btn-info-restore'); await tick(); await tick();
+  expect(!window.MFE.licence.isFull(), 'Wiederherstellen ohne Kauf schaltet nichts frei');
+  expect($('#toast').textContent.length > 0, 'und sagt es');
+
+  // Kauf -> frei, Startseite ohne Sperren, gemerkt fuer den naechsten Start
+  buyResult = 'purchased';
+  click('#btn-info-store'); await tick(); await tick();
+  expect(window.MFE.licence.isFull() && window.MFE.licence.owned(), 'Kauf schaltet Pro frei');
+  expect(window.localStorage.getItem('mfe:pro') === '1', 'der Kaufstand wird fuer den Start gemerkt');
+  expect($('#info-lite-box').hidden, 'nach dem Kauf verschwinden Kaufen/Wiederherstellen');
+  click('#btn-home'); await tick();
+  expect(!$$('.fn-card.is-locked').length, `nach dem Kauf ist keine Karte mehr gesperrt (${$$('.fn-card.is-locked').length})`);
+  expect(!$$('.grid-sep').length, 'und die Trennzeile ist weg');
+  expect(!Array.from($('#home-select').options).some(o => o.textContent.includes('PRO')), 'Schnellwahl ohne PRO-Kennzeichnung');
+  click('.fn-card[data-category="quadratic"]'); await tick();
+  expect($('#screen-app').classList.contains('is-active') && !$('#pro-dialog').open, 'quadratische Funktion jetzt erreichbar');
+
+  // Erstattung: StoreKit meldet "nicht mehr gekauft" ueber watch()
+  storeOwned = false;
+  watcher({ productId: PID }); await tick();
+  expect(!window.MFE.licence.isFull(), 'nach einer Erstattung ist Pro wieder gesperrt');
+  expect(window.localStorage.getItem('mfe:pro') === '0', 'und der gemerkte Stand ebenso');
+
+  // Wiederherstellen mit Kauf
+  restoreOwned = true; storeOwned = true;
+  click('#btn-home'); await tick();
+  click('#card-info'); await tick();
+  click('#btn-info-restore'); await tick(); await tick();
+  expect(window.MFE.licence.isFull(), 'Wiederherstellen schaltet einen vorhandenen Kauf frei');
+
+  // Fehler beim Abgleich: letzten bekannten Stand behalten (offline)
+  window.MFEStore.status = (id, ok, fail) => fail({ error: 'offline' });
+  window.MFE.billing.refresh(); await tick();
+  expect(window.MFE.licence.isFull(), 'App Store nicht erreichbar: Pro bleibt erhalten');
+
+  // Links aus der App zeigen ins Web, nicht auf app://localhost
+  expect(window.MFE.ui.publicBase().startsWith('https://'), 'Links aus der App zeigen auf die Web-Fassung');
+  expect($('#btn-print').hidden, 'Drucken ist in der App verborgen (WKWebView druckt nicht)');
+} else {
+  expect(window.MFE.ui.publicBase() === 'https://example.org/', 'im Browser zeigen Links auf die eigene Adresse');
+  expect(!$('#btn-print').hidden, 'Drucken ist im Browser sichtbar');
+}
+
 /* ---- Ergebnis ---------------------------------------------------------- */
 const failed = checks.filter(([ok]) => !ok);
-console.log(`${LITE ? 'LITE' : 'PRO '}: ${checks.length - failed.length}/${checks.length} Pruefungen bestanden`);
+console.log(`${LITE ? 'iOS ohne Kauf' : 'Browser      '}: ${checks.length - failed.length}/${checks.length} Pruefungen bestanden`);
 if (errors.length) {
   console.error('Fehler:');
   for (const e of [...new Set(errors)]) console.error('  · ' + e);

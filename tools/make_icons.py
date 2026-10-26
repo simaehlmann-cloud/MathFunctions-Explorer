@@ -8,7 +8,7 @@ Motiv: die vier Funktionsklassen der App in den vier Parameterfarben.
 Farben und Kurvenformen stehen als Konstanten weiter unten - wer die Palette
 in style.css aendert, sollte sie hier mitziehen.
 """
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import math, pathlib
 
 SS = 4                     # Supersampling: PIL zeichnet ohne Kantenglaettung
@@ -18,9 +18,6 @@ C_LIN   = (96, 165, 250)   # linear      - blau
 C_QUAD  = (232, 121, 249)  # quadratisch - magenta
 C_EXP   = (45, 212, 191)   # exponentiell- tuerkis
 C_SIN   = (251, 191, 36)   # sinus       - amber
-BADGE   = (255, 255, 255)
-
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 def thick(d, pts, width, fill):
     """Dicke Linie als Polygon. PILs line(width=) hinterlaesst an
@@ -38,11 +35,14 @@ def thick(d, pts, width, fill):
     for p in (pts[0], pts[-1]):
         d.ellipse([p[0]-width/2, p[1]-width/2, p[0]+width/2, p[1]+width/2], fill=fill)
 
-def build(size, maskable=False, lite=False):
+def build(size, maskable=False, store=False):
+    """store=True: App-Store-Icon. Volles Quadrat ohne Rundung und ohne
+    Alphakanal - iOS rundet selbst, und App Store Connect weist Icons mit
+    Transparenz zurueck (erst nach der Verarbeitung, Build-Nummer verbraucht)."""
     S = size*SS
     img = Image.new('RGBA', (S, S), (0,0,0,0))
     d = ImageDraw.Draw(img, 'RGBA')
-    d.rounded_rectangle([0,0,S-1,S-1], radius=0 if maskable else int(S*0.225), fill=BG)
+    d.rounded_rectangle([0,0,S-1,S-1], radius=0 if (maskable or store) else int(S*0.225), fill=BG)
 
     # Sicherer Bereich: maskable-Icons werden von Android beschnitten
     pad = S*0.205 if maskable else S*0.155
@@ -82,32 +82,27 @@ def build(size, maskable=False, lite=False):
     for pts, col in curves:
         if len(pts) > 1: thick(d, pts, lw, col)
 
-    if lite:
-        # Abzeichen unten rechts, im maskable-Icon weiter nach innen
-        bw, bh = (S*0.34, S*0.125) if maskable else (S*0.40, S*0.155)
-        m = S*0.215 if maskable else S*0.085
-        box = [S-m-bw, S-m-bh, S-m, S-m]
-        d.rounded_rectangle(box, radius=bh/2, fill=BADGE)
-        try:
-            f = ImageFont.truetype(FONT, int(bh*0.62))
-        except OSError:
-            f = ImageFont.load_default()
-        text = "LITE"
-        l, t, r, b = d.textbbox((0,0), text, font=f)
-        d.text((box[0]+(bw-(r-l))/2 - l, box[1]+(bh-(b-t))/2 - t), text, font=f, fill=BG)
-
-    return img.resize((size, size), Image.LANCZOS)
+    out = img.resize((size, size), Image.LANCZOS)
+    if store:
+        flat = Image.new('RGB', out.size, BG)
+        flat.paste(out, (0, 0), out)
+        out = flat
+    return out
 
 out = pathlib.Path('icons')
 out.mkdir(exist_ok=True)
-jobs = [
-    ('icon-192.png',              192, False, False),
-    ('icon-512.png',              512, False, False),
-    ('icon-maskable-512.png',     512, True,  False),
-    ('icon-lite-192.png',         192, False, True),
-    ('icon-lite-512.png',         512, False, True),
-    ('icon-lite-maskable-512.png',512, True,  True),
-]
-for name, size, mask, lite in jobs:
-    build(size, mask, lite).save(out/name)
+# Die Web-Icons (192/512/maskable) werden nur auf ausdruecklichen Wunsch neu
+# erzeugt: die eingecheckten Dateien weichen leicht von dieser Quelle ab
+# (deutlicheres Raster), und ein stilles Ueberschreiben veraendert das Icon
+# der installierten PWA.  ->  python3 tools/make_icons.py --web
+import sys
+jobs = [('icon-1024.png', 1024, False, True)]
+if '--web' in sys.argv:
+    jobs += [
+        ('icon-192.png',          192, False, False),
+        ('icon-512.png',          512, False, False),
+        ('icon-maskable-512.png', 512, True,  False),
+    ]
+for name, size, mask, store in jobs:
+    build(size, mask, store).save(out/name)
 print("erzeugt:", ", ".join(j[0] for j in jobs))
