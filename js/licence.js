@@ -1,52 +1,49 @@
 /* ==========================================================================
-   licence.js  ·  Lite / Pro
+   licence.js  ·  Kostenlose Version / Pro (In-App-Kauf)
    --------------------------------------------------------------------------
-   WICHTIG, BITTE LESEN, BEVOR DIE APP IN EINEN STORE GEHT:
+   Es gibt EINE App. Kostenlos sind lineare und exponentielle Funktionen mit
+   den fertigen Quizzen; ein einmaliger In-App-Kauf (kein Abo) schaltet den
+   vollen Umfang frei. Aufbau wie bei FairSeat:
 
-   Alles in dieser Datei laeuft im Browser der Nutzerin. Wer die
-   Entwicklerkonsole oeffnet, kann `MFE.licence.setEdition('pro')` aufrufen und
-   hat Pro. Diese Datei ist deshalb ausschliesslich die WEICHE FUER DIE
-   OBERFLAECHE - sie ist kein Kopierschutz und kann keiner sein.
+   · Gesperrt wird nur in der iOS-App. Im Browser (GitHub Pages) und in der
+     Android-App gibt es vorerst keinen Kauf - dort steht alles frei. Vor
+     einer Android-Version mit Kauf braucht das Plugin eine Play-Billing-Seite.
 
-   Belastbar wird die Pruefung nur an einer Stelle, die der Nutzer nicht
-   kontrolliert:
-     · Android  -> Play Billing Purchase-Token gegen die Google Play
-                   Developer API pruefen (purchases.products.get)
-     · Web      -> eigenes Konto, signiertes Token mit kurzer Laufzeit,
-                   Signaturpruefung serverseitig
+   · Ob gekauft wurde, entscheidet StoreKit 2 auf dem Geraet (von Apple
+     signierte Transaktion, siehe plugins-src/cordova-plugin-mfe-store).
+     Kein eigener Server, nichts verlaesst das Geraet.
 
-   Achtung CSP: sobald verifyWithServer() wirklich benutzt wird, muss in
-   index.html `connect-src` die Lizenz-Domain erlauben. Das ist dann der
-   einzige ausgehende Verbindungspunkt der App und gehoert genau so in die
-   Datenschutzerklaerung.
+   · Hier wird nur der LETZTE BEKANNTE Stand gemerkt, damit die App beim
+     Start nicht kurz gesperrt aufblitzt und offline nutzbar bleibt.
+     billing.js gleicht ihn nach jedem Start mit StoreKit ab.
+
+   Diese Datei ist die Weiche fuer die Oberflaeche, kein Kopierschutz. Wer an
+   den WebView-Speicher kommt, kann sich Pro setzen; fuer eine
+   Schul-App ist das hinnehmbar, und StoreKit setzt den Stand beim naechsten
+   Start ohnehin wieder richtig.
+
+   Erkennung der iOS-App: build-www.mjs bindet cordova.js VOR dieser Datei
+   ein. cordova.js legt window.cordova samt platformId synchron an - die
+   Plugins dagegen erst bis "deviceready". Deshalb fragt has() nur nach der
+   Plattform und nicht nach dem Plugin: sonst waere beim Start fuer einen
+   Moment alles offen, und eine gespeicherte Sitzung mit gesperrter
+   Funktionsklasse wuerde wiederhergestellt.
    ========================================================================== */
 'use strict';
 window.MFE = window.MFE || {};
 
 MFE.licence = (() => {
 
-  /* Wird vom Build-Skript ersetzt: tools/build-www.mjs setzt bei
-     `npm run build:lite` hier 'lite' ein. Beim Entwickeln auf 'pro' lassen,
-     um alle Funktionen zu sehen. */
-  const DEV_EDITION = 'pro';
+  /** Muss exakt so in App Store Connect angelegt sein (Typ: nicht verbrauchbar). */
+  const PRODUCT_ID = 'de.wisdompeak.mathfunctions.pro';
 
-  /** Anwendungskennung der Pro-Ausgabe im Play Store. Muss mit
-   *  capacitor.config.json der Pro-Ausgabe uebereinstimmen. */
-  const PRO_APP_ID = 'de.wisdompeak.mathfunctions';
-  const STORE_URL  = 'https://play.google.com/store/apps/details?id=' + PRO_APP_ID;
+  /** Eigener Schluessel ausserhalb der Sitzungsdaten. */
+  const OWNED_KEY = 'mfe:pro';
 
-  /** Erst auf true setzen, wenn die Pro-Ausgabe im Play Store TATSAECHLICH
-   *  erreichbar ist. Solange sie es nicht ist, fuehrt jeder Klick auf
-   *  "Pro-Ausgabe ansehen" auf eine Fehlerseite von Google - und die Nutzerin
-   *  haelt die App fuer kaputt. Mit false sagt die App stattdessen ehrlich,
-   *  dass es die Pro-Ausgabe noch nicht gibt. */
-  const STORE_LIVE = false;
-
-  /* Was die Lite-Ausgabe NICHT kann. Eine einzige Liste - wer hier etwas
-     aendert, aendert es ueberall, weil die Oberflaeche ausschliesslich ueber
-     has() fragt. */
-  const PRO_FEATURES = new Set([
-    // Funktionsklassen. Lite behaelt lineare und exponentielle Funktionen.
+  /* Was die kostenlose Version NICHT kann. Eine einzige Liste - die
+     Oberflaeche fragt ausschliesslich ueber has(). */
+  const LOCKED = new Set([
+    // Funktionsklassen. Frei bleiben lineare und exponentielle Funktionen.
     'cat.quadratic',
     'cat.polynomial',
     'cat.logarithm',
@@ -55,80 +52,45 @@ MFE.licence = (() => {
     'cat.absolute',
     'cat.rational',
     // Werkzeuge
-    'calculus',       // Ableitung und Tangente
+    'calculus',       // Ableitung, Tangente, Sekante
     'quizBuilder',    // eigene Quizze bauen, speichern, weitergeben
     'randomQuiz',     // Quiz per Knopfdruck erzeugen
     'ownQuiz',        // Schnellaufgabe aus dem Explorer
     'practice',       // Nachbau-Modus
     'secondCurve',    // zweite Funktion g(x)
-    'export',         // PNG-Export
+    'export',         // PNG-Export, Arbeitsblatt
     'share',          // Deep Link kopieren
     'drag',           // Graph anfassen
     'transform'       // Transformation abspielen
   ]);
 
-  const STORE_KEY = 'mfe:licence';
-  let edition = DEV_EDITION;
-  let token = null;
+  /** Laeuft die App als iOS-App mit App-Store-Kauf? */
+  const storeApp = () => !!window.cordova && window.cordova.platformId === 'ios';
 
-  function load() {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      // Ablaufdatum lokal pruefen ist nur Komfort. Die Signaturpruefung
-      // gehoert auf den Server; hier wird sie bewusst NICHT vorgetaeuscht.
-      if (data.expires && Date.now() > data.expires) { localStorage.removeItem(STORE_KEY); return; }
-      token = data.token || null;
-      if (data.edition === 'pro' && token) edition = 'pro';
-    } catch { /* privater Modus: Lite ist der sichere Fallback */ }
+  let owned = false;
+  try { owned = localStorage.getItem(OWNED_KEY) === '1'; } catch { /* privater Modus */ }
+
+  /** Setzt den Kaufstand. Rueckgabe: hat er sich geaendert? */
+  function setOwned(v) {
+    v = v === true;
+    if (owned === v) return false;
+    owned = v;
+    try { localStorage.setItem(OWNED_KEY, v ? '1' : '0'); } catch {}
+    return true;
   }
 
-  /** Platzhalter fuer die echte Pruefung. Bewusst nicht implementiert -
-   *  ein erfundener Endpunkt waere schlimmer als gar keiner. */
-  async function verifyWithServer(receipt, endpoint) {
-    if (!endpoint) throw new Error('Kein Lizenzserver konfiguriert.');
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receipt })
-    });
-    if (!res.ok) throw new Error('Lizenzpruefung fehlgeschlagen: ' + res.status);
-    const data = await res.json();          // { edition, token, expires }
-    if (data.edition === 'pro' && data.token) {
-      edition = 'pro'; token = data.token;
-      try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch {}
-    }
-    return edition;
-  }
-
-  /** Fuehrt zur Pro-Ausgabe. In der nativen App uebernimmt Capacitor das
-   *  Ziel `_blank` und oeffnet den Play Store; im Browser einen neuen Tab.
-   *  Absichtlich `noopener`: die Zielseite darf nicht auf window.opener
-   *  zugreifen. */
-  function openStore() {
-    if (!STORE_LIVE) return 'notyet';
-    try {
-      const w = window.open(STORE_URL, '_blank', 'noopener,noreferrer');
-      if (w) return true;
-    } catch { /* Popup-Blocker oder WebView ohne Handler */ }
-    try { location.href = STORE_URL; return true; } catch { return false; }
-  }
-
-  load();
+  const isFull = () => !storeApp() || owned;
 
   return {
     /** Einzige Stelle, an der die Oberflaeche nach Berechtigungen fragt. */
-    has: (feature) => edition === 'pro' || !PRO_FEATURES.has(feature),
-    isPro: () => edition === 'pro',
-    edition: () => edition,
-    /** Nur fuer Entwicklung und Tests. */
-    setEdition(v) { edition = v === 'pro' ? 'pro' : 'lite'; },
-    verifyWithServer,
-    openStore,
-    storeLive: () => STORE_LIVE,
-    STORE_URL,
-    PRO_APP_ID,
-    PRO_FEATURES
+    has: (feature) => isFull() || !LOCKED.has(feature),
+    /** Voller Umfang - gekauft oder ohne Kauf (Browser, Android). */
+    isFull,
+    /** Tatsaechlich gekauft (nur in der iOS-App sinnvoll). */
+    owned: () => owned,
+    storeApp,
+    setOwned,
+    PRODUCT_ID,
+    LOCKED
   };
 })();

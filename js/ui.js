@@ -224,6 +224,64 @@ function syncSliderGroup(ctx) {
   }
 }
 
+/* --------------------------------------------------------------------------
+   App und Web
+   In der iOS-/Android-App laeuft die Seite unter app://localhost bzw.
+   https://localhost. Ein Link oder QR-Code mit dieser Adresse fuehrt auf
+   jedem anderen Geraet ins Leere - Schuelerinnen scannen den Quiz-Code mit
+   der Kamera und landen im Browser. Deshalb zeigen Links aus der App auf die
+   oeffentliche Web-Fassung (GitHub Pages, pages.yml).
+   -------------------------------------------------------------------------- */
+const WEB_URL = 'https://simaehlmann-cloud.github.io/MathFunctions-Explorer/';
+
+/** Basisadresse fuer Links, die das Geraet verlassen (ohne Hash). */
+function publicBase() {
+  if (window.cordova) return WEB_URL;
+  return location.origin + location.pathname;
+}
+
+/**
+ * Datei an die Nutzerin geben. Im Browser als Download; in der App ueber das
+ * Teilen-Menue des Systems (cordova-plugin-x-socialsharing) - WKWebView
+ * ignoriert <a download>, die Datei kaeme nie an. Dort waehlt man "In Dateien
+ * sichern", "Bild sichern" oder eine App. Vorlage: cordovaShare() in FairSeat.
+ * Rueckgabe: true, wenn ein Weg angestossen wurde.
+ */
+function saveFile(blob, filename, mime) {
+  const sharer = window.plugins?.socialsharing;
+  if (window.cordova && sharer?.shareWithOptions) {
+    const r = new FileReader();
+    r.onerror = () => toast(t('msg.exportFail'));
+    r.onload = () => {
+      // "df:Name;data:..." - so uebernehmen iOS und Android den Dateinamen.
+      let uri = String(r.result);
+      const b64 = uri.indexOf(';base64,');
+      if (b64 > 0) uri = 'data:' + ((mime || blob.type || '').split(';')[0].trim() || 'application/octet-stream') + uri.slice(b64);
+      const name = String(filename).replace(/[;,]/g, '_');
+      const w = window.innerWidth || 800, h = window.innerHeight || 600;
+      sharer.shareWithOptions({
+        subject: filename, files: ['df:' + name + ';' + uri], chooserTitle: filename,
+        // iPad: das Teilen-Blatt braucht einen Ankerpunkt, sonst stuerzt es ab
+        iPadCoordinates: `${Math.round(w / 2)},${Math.round(h / 3)},1,1`
+      }, () => {}, () => toast(t('msg.exportFail')));
+    };
+    r.readAsDataURL(blob);
+    return true;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  a.click();
+  // Ohne das bliebe die Datei im Speicher liegen, solange die Seite offen ist.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
+
+/** Kann die Umgebung drucken? WKWebView in der iOS-App ignoriert
+ *  window.print() stillschweigend. */
+const canPrint = () => !window.cordova;
+
 return { $, $$, debounce, toast, cssId, renderSliderGroup, syncSliderGroup,
-         setValue, widenBounds, commitTyped, setSnap };
+         setValue, widenBounds, commitTyped, setSnap,
+         publicBase, saveFile, canPrint, WEB_URL };
 })();

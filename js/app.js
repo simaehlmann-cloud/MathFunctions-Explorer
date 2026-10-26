@@ -29,7 +29,7 @@ const BEAMER_SCALE = 1.55;
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '6.6.1';
+const APP_VERSION = '7.0.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -1974,12 +1974,8 @@ function exportImage() {
 
   off.toBlob((blob) => {
     if (!blob) { toast(t('msg.copyFail')); return; }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `graph_${curve(0).form}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(t('msg.saved'));
+    MFE.ui.saveFile(blob, `graph_${curve(0).form}.png`, 'image/png');
+    if (!window.cordova) toast(t('msg.saved'));
   }, 'image/png');
 }
 
@@ -2037,18 +2033,45 @@ function printWorksheet() {
 
 async function shareLink() {
   if (!licence.has('share')) { proHint(); return; }
-  const url = location.origin + location.pathname + buildHash();
+  const url = MFE.ui.publicBase() + buildHash();
   try { await navigator.clipboard.writeText(url); toast(t('msg.copied')); }
   catch { toast(t('msg.copyFail')); }
 }
 
 /* ==========================================================================
-   14 · LITE / PRO
+   14 · KOSTENLOSE VERSION / PRO (IN-APP-KAUF)
    ========================================================================== */
 function proHint(kind) {
   const key = kind === 'cat' ? 'msg.proCat' : kind === 'calculus' ? 'msg.needCalculus' : 'msg.pro';
   toast(t(key));
+  paintBuyButtons();
   MFE.nav.openDialog($('#pro-dialog'));
+}
+
+/** Beschriftet die Kaufknoepfe mit dem Preis aus dem App Store, sobald er da
+ *  ist. Den Preis nie selbst hineinschreiben: Apple rechnet je Land um. */
+function paintBuyButtons() {
+  const p = MFE.billing?.price?.() || '';
+  const label = p ? t('btn.buyPrice', { p }) : t('btn.buy');
+  for (const id of ['#btn-pro-store', '#btn-info-store']) {
+    const b = $(id);
+    if (b) b.textContent = label;
+  }
+}
+
+/** Kauf ueber den App Store. Der Erfolg kommt ueber mfe:licence-changed;
+ *  hier nur die Faelle, in denen die Nutzerin eine Rueckmeldung braucht. */
+async function buyFull() {
+  const r = await MFE.billing.purchase();
+  if (r.reason === 'pending') toast(t('msg.buyPending'));
+  else if (r.reason === 'error' || r.reason === 'missing') toast(t('msg.buyFail'));
+}
+
+async function restoreFull() {
+  const r = await MFE.billing.restore();
+  if (r.reason === 'restored') { if (licence.owned()) toast(t('msg.proUnlocked')); }
+  else if (r.reason === 'none') toast(t('msg.restoreNone'));
+  else if (r.reason === 'error' || r.reason === 'missing') toast(t('msg.restoreFail'));
 }
 
 function markProFeatures() {
@@ -2081,10 +2104,17 @@ function markProFeatures() {
  */
 function sortHomeCards() {
   for (const grid of $$('.fn-grid')) {
-    const cards = Array.from(grid.children);
+    // Urspruengliche Reihenfolge einmal merken. Nach dem Kauf muss die
+    // Startseite wieder in der fachlichen Ordnung stehen, ohne Trennlinie.
+    if (!grid._order) grid._order = Array.from(grid.children).filter(c => !c.classList.contains('grid-sep'));
+    const cards = grid._order;
     const open = cards.filter(c => !c.dataset.feature || licence.has(c.dataset.feature));
     const locked = cards.filter(c => c.dataset.feature && !licence.has(c.dataset.feature));
-    if (!locked.length) continue;
+    if (!locked.length) {
+      grid.querySelector('.grid-sep')?.remove();
+      grid.append(...cards);
+      continue;
+    }
     grid.append(...open, ...locked);
     // Trennlinie vor dem gesperrten Teil - sonst wirkt der Bruch willkuerlich.
     let sep = grid.querySelector('.grid-sep');
@@ -2136,14 +2166,17 @@ function renderInfo() {
     li.textContent = t('info.f' + i);
     ul.append(li);
   }
-  const pro = licence.isPro();
-  $('#info-edition').textContent = t(pro ? 'info.edition.pro' : 'info.edition.lite');
+  const full = licence.isFull();
+  const store = licence.storeApp();
+  $('#info-edition').textContent = t(!store ? 'info.edition.free' : full ? 'info.edition.full' : 'info.edition.lite');
   $('#info-version').textContent = t('info.version', {
     v: APP_VERSION,
-    e: pro ? 'Pro' : 'Lite',
-    p: window.Capacitor?.isNativePlatform?.() ? t('info.platform.app') : t('info.platform.web')
+    e: t(!store ? 'info.ed.open' : full ? 'info.ed.full' : 'info.ed.free'),
+    p: window.cordova ? t('info.platform.app') : t('info.platform.web')
   });
-  $('#info-lite-box').hidden = pro;
+  // Kaufen und Wiederherstellen nur dort, wo es einen Kauf gibt.
+  $('#info-lite-box').hidden = !store || full;
+  paintBuyButtons();
 }
 
 /* ==========================================================================
@@ -2194,8 +2227,18 @@ function applyLanguage() {
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
 }
 
+/** Schrift der Statusleiste (Uhr, Akku) passend zum Thema. Nur in der App
+ *  mit cordova-plugin-statusbar; im Browser regelt das theme-color. */
+function syncStatusBar() {
+  const sb = window.StatusBar;
+  if (!sb) return;
+  try { state.theme === 'dark' ? sb.styleLightContent() : sb.styleDefault(); } catch {}
+}
+document.addEventListener('deviceready', () => syncStatusBar(), false);
+
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', state.theme);
+  syncStatusBar();
   MFE.colors.clear();          // sonst zeichnet der Graph mit den alten Farben
   renderCurveSwitcher();
   renderTableHead();
@@ -2533,6 +2576,9 @@ function bindEvents() {
   $('#btn-export').addEventListener('click', exportImage);
   $('#btn-share').addEventListener('click', shareLink);
   $('#btn-print').addEventListener('click', printWorksheet);
+  // WKWebView ignoriert window.print(). Bis es einen nativen Druckweg gibt,
+  // bleibt der Knopf in der App verborgen statt wirkungslos.
+  $('#btn-print').hidden = !MFE.ui.canPrint();
   $('#btn-undo').addEventListener('click', undo);
   $('#btn-redo').addEventListener('click', redo);
 
@@ -2549,17 +2595,13 @@ function bindEvents() {
 
   $('#dialog-save').addEventListener('click', (e) => { if (!saveParamDialog()) e.preventDefault(); });
 
-  // Drei Faelle, drei Meldungen: noch nicht veroeffentlicht, Oeffnen
-  // gescheitert, oder es hat geklappt. Frueher gab es nur "ging nicht".
-  const toStore = () => {
-    const r = licence.openStore();
-    if (r === 'notyet') toast(t('msg.storeNotYet'));
-    else if (!r) toast(t('msg.storeFail'));
-  };
   $('#pro-dialog').addEventListener('close', (e) => {
-    if (e.target.returnValue === 'store') toStore();
+    if (e.target.returnValue === 'store') buyFull();
+    else if (e.target.returnValue === 'restore') restoreFull();
   });
-  $('#btn-info-store').addEventListener('click', toStore);
+  $('#btn-info-store').addEventListener('click', buyFull);
+  $('#btn-info-restore').addEventListener('click', restoreFull);
+  addEventListener('mfe:price', paintBuyButtons);
 
   $('#btn-gen-table').addEventListener('click', generateTable);
   $('#btn-copy-table').addEventListener('click', copyTable);
@@ -2687,12 +2729,16 @@ function bindEvents() {
     if (race.on) stopRace({ keepSummary: false });
   });
 
-  addEventListener('mfe:licence-changed', () => {
+  addEventListener('mfe:licence-changed', (e) => {
     markProFeatures();
     sortHomeCards();
+    renderHomeSelect();
     updateExplorer();
     renderInfo();
-    toast(t('msg.proUnlocked'));
+    if (e.detail?.owned) {
+      $('#pro-dialog').open && $('#pro-dialog').close('cancel');
+      toast(t('msg.proUnlocked'));
+    }
   });
 }
 
@@ -2737,7 +2783,7 @@ function registerServiceWorker() {
      schon einmal offen hatte, sah die Leiste auch nach der Berichtigung.
      Deshalb wird er jetzt aktiv abgemeldet und sein Zwischenspeicher
      geloescht. */
-  if (window.Capacitor?.isNativePlatform?.()) {
+  if (window.cordova) {
     navigator.serviceWorker.getRegistrations?.()
       .then(list => Promise.all(list.map(r => r.unregister())))
       .then(async (done) => {

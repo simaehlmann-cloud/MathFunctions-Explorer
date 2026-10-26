@@ -35,7 +35,7 @@ let lastExitAttempt = 0;
 let started = false;
 let depth = 0;          // wie viele eigene Eintraege ueber der Startseite liegen
 
-const isNative = () => !!window.Capacitor?.isNativePlatform?.();
+const isNative = () => !!window.cordova;
 
 /** Der aktuelle Hash bleibt unangetastet - er traegt den Funktionszustand
  *  und hat mit der Navigation nichts zu tun. */
@@ -120,24 +120,23 @@ function guardExit() {
   return false;
 }
 
-/** Bindet den Hardware-Zurueck-Knopf, sofern das Capacitor-App-Plugin
- *  vorhanden ist. Ohne Plugin uebernimmt die WebView selbst - dann greift
- *  wenigstens der Verlauf oben. */
+/** Bindet den Hardware-Zurueck-Knopf (nur Android). Cordova meldet ihn als
+ *  "backbutton" am document - aber erst nach "deviceready", und nur wenn
+ *  jemand lauscht. Sobald ein Lauscher haengt, beendet die WebView die App
+ *  nicht mehr von selbst; das Beenden uebernimmt guardExit() unten. */
+let backBound = false;
 function bindNativeBack() {
-  const App = window.Capacitor?.Plugins?.App;
-  if (!App?.addListener) {
-    // Ohne @capacitor/app gibt es kein backButton-Ereignis, und die WebView
-    // beendet die App beim ersten Druck. Genau daran ist die erste Fassung
-    // gescheitert: nav.js war fertig, das Plugin fehlte.
-    if (isNative()) console.warn('[nav] @capacitor/app fehlt - der Zurueck-Knopf beendet die App.');
-    return false;
-  }
-  App.addListener('backButton', () => {
-    // Nicht canGoBack der WebView auswerten: dort zaehlen auch Eintraege mit,
-    // die nicht von uns stammen. Massgeblich ist unsere eigene Tiefe.
-    if (openDialogs().length || depth > 0) { history.back(); return; }
-    if (guardExit()) App.exitApp?.();
-  });
+  if (backBound || !isNative()) return false;
+  backBound = true;
+  document.addEventListener('deviceready', () => {
+    document.addEventListener('backbutton', (e) => {
+      e.preventDefault?.();
+      // Nicht canGoBack der WebView auswerten: dort zaehlen auch Eintraege
+      // mit, die nicht von uns stammen. Massgeblich ist unsere eigene Tiefe.
+      if (openDialogs().length || depth > 0) { history.back(); return; }
+      if (guardExit()) navigator.app?.exitApp?.();
+    }, false);
+  }, false);
   return true;
 }
 
@@ -149,9 +148,7 @@ function init(hooks) {
   current = { screen: hooks.screen || 'home', tab: hooks.tab || 'explorer' };
   replace(current);
   addEventListener('popstate', handlePop);
-  const bound = bindNativeBack();
-  // Auf Android kann das Plugin kurz nach dem Start bereitstehen.
-  if (!bound && isNative()) setTimeout(bindNativeBack, 500);
+  bindNativeBack();
 }
 
 return { init, go, replace, openDialog,

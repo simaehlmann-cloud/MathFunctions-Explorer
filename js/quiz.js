@@ -436,7 +436,7 @@ function decodeQuiz(code) {
 }
 
 function linkFor(quiz) {
-  return location.origin + location.pathname + '#quiz=' + encodeQuiz(quiz);
+  return MFE.ui.publicBase() + '#quiz=' + encodeQuiz(quiz);
 }
 
 /* ==========================================================================
@@ -1714,14 +1714,8 @@ function backupSave() {
   if (!list.length) { toast(t('quiz.noQuizzes')); return; }
   const payload = JSON.stringify({ format: BACKUP_TAG, version: 1, at: new Date().toISOString(), quizzes: list }, null, 1);
   const blob = new Blob([payload], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
   const day = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `mathfunctions-quizze-${day}.json`;
-  a.click();
-  // Ohne das bliebe die Datei im Speicher liegen, solange die Seite offen ist.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  MFE.ui.saveFile(blob, `mathfunctions-quizze-${day}.json`, 'application/json');
   toast(t('quiz.backupDone', { n: list.length }));
 }
 
