@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Eigenes, kleines Plugin für den einen In-App-Kauf von MathFunctions Explorer ("Pro"). Vorlage: FairSeat.
+     StoreKit 2 (ab iOS 15, passt zur Mindestversion der App). Kann genau das, was die
+     App braucht: Preis holen, kaufen, Kauf prüfen, Kauf wiederherstellen.
+     Kein eigener Server, keine Quittungen auf dem Gerät außer der von Apple.
+     Bewusst nur iOS: ohne Plugin (Browser, Android) steht in der App alles frei (js/licence.js). -->
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        id="cordova-plugin-mfe-store" version="1.0.0">
+  <name>MFE Store</name>
+  <description>In-App-Kauf Pro (StoreKit 2)</description>
+
+  <platform name="ios">
+    <!-- Nur unter iOS: unter Android gaebe es den JS-Teil ohne nativen Teil,
+         und jeder Aufruf endete in "Class not found". -->
+    <js-module src="www/mfe-store.js" name="MFEStore">
+      <clobbers target="MFEStore" />
+    </js-module>
+    <config-file target="config.xml" parent="/*">
+      <feature name="MFEStore">
+        <param name="ios-package" value="MFEStore" />
+        <!-- schon beim Start laden, damit Käufe aus "Ask to Buy" und Erstattungen ankommen -->
+        <param name="onload" value="true" />
+      </feature>
+    </config-file>
+    <header-file src="src/ios/MFEStore-Bridging-Header.h" type="BridgingHeader" />
+    <source-file src="src/ios/MFEStore.swift" />
+    <!-- StoreKit wird über "import StoreKit" automatisch gelinkt (Swift-Autolinking) -->
+  </platform>
+</plugin>
