@@ -9,17 +9,12 @@ Thumbs.db
 
 # Abhaengigkeiten und Build-Ergebnisse
 node_modules/
-www/
+/www/
+/dist/
 
-# Android: das Projekt selbst GEHOERT ins Repo (der Workflow braucht es),
-# nur die Bauergebnisse und lokalen Pfade bleiben draussen.
-android/.gradle/
-android/build/
-android/app/build/
-android/app/release/
-android/local.properties
-android/capacitor-cordova-android-plugins/
-.gradle/
+# Capacitor-Reste (bis 6.6.x)
+/android/
+/ios/
 
 # Signaturschluessel niemals einchecken. Geht er verloren, laesst sich die
 # App im Play Store nicht mehr aktualisieren - Sicherungskopie ausserhalb
@@ -27,3 +22,12 @@ android/capacitor-cordova-android-plugins/
 *.keystore
 *.jks
 key.properties
+*.p12
+*.p8
+*.mobileprovision
+
+# Erzeugt im iOS-Workflow (tools/make_ios_icons.py)
+res/ios/icon-*.png
+res/ios/Default*.png
+# Cordova-Arbeitsordner der Workflows
+/build/
