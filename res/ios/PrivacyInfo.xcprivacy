@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy-Manifest fuer MathFunctions Explorer (Vorlage: FairSeat).
+
+  Apple verlangt diese Datei, seit die "Required Reason APIs" durchgesetzt
+  werden. Ohne sie weist App Store Connect den Upload zurueck - erst nach der
+  Verarbeitung, die Build-Nummer ist dann verbraucht.
+
+  Die App erhebt nichts, sendet nichts und trackt nicht; alles bleibt auf dem
+  Geraet. Das deckt sich mit der Datenschutzerklaerung und den Angaben unter
+  "App-Datenschutz" in App Store Connect ("Keine Daten erfasst").
+
+  Einziger meldepflichtiger Zugriff: UserDefaults. Cordova legt dort eigene
+  Einstellungen ab. Grund CA92.1 = ausschliesslich Daten des eigenen
+  App-Containers.
+
+  Der In-App-Kauf (plugins-src/cordova-plugin-mfe-store, StoreKit 2) nutzt
+  keine meldepflichtige Schnittstelle. Apple wickelt die Zahlung ab; der
+  Entwickler erhaelt keine Daten - NSPrivacyCollectedDataTypes bleibt leer.
+
+  Der iOS-Workflow ersetzt das von cordova-ios erzeugte (leere) Manifest
+  durch diese Datei und bricht ab, wenn CA92.1 fehlt.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- Leer und bewusst so: Die App sammelt keine Daten. -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
