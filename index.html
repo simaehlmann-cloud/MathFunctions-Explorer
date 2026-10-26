@@ -8,9 +8,9 @@
   Strikte Content-Security-Policy.
   connect-src 'self' erlaubt dem Service Worker, die eigenen Dateien
   nachzuladen - und sonst nichts. Keine fremde Domain ist erreichbar.
-  Wird spaeter eine Lizenzpruefung eingebaut (siehe js/licence.js), muss hier
-  genau eine Domain ergaenzt werden; das ist dann der einzige ausgehende
-  Verbindungspunkt der App und gehoert in die Datenschutzerklaerung.
+  Der In-App-Kauf (js/billing.js) laeuft ueber StoreKit im nativen Teil der
+  App und braucht hier keine Freigabe. Die Cordova-Bruecke unter iOS nutzt
+  WKScriptMessageHandler, also ebenfalls keine Netzadresse.
 -->
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:;
@@ -20,8 +20,8 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
-<!-- Die Lite-Ausgabe entsteht automatisch: tools/build-www.mjs tauscht das
-     Manifest und die drei Icon-Verweise. Nicht von Hand aendern. -->
+<!-- In der App bindet tools/build-www.mjs cordova.js vor js/licence.js ein.
+     Hier fehlt es absichtlich: im Browser gaebe es nur einen 404. -->
 <meta name="description" content="Interaktiver Funktionenplotter fuer den Mathematikunterricht. Laeuft vollstaendig lokal.">
 <title>MathFunctions Explorer</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -138,7 +138,7 @@
       <button class="fn-card tool-card" type="button" id="card-info">
         <span class="tool-mark" aria-hidden="true">i</span>
         <span class="fn-name" data-i18n="home.about">Über MathFunctions Explorer</span>
-        <span class="fn-desc" data-i18n="home.aboutDesc">Was die App kann, für wen sie gedacht ist, was Lite und Pro unterscheidet.</span>
+        <span class="fn-desc" data-i18n="home.aboutDesc">Was die App kann, für wen sie gedacht ist und was Pro freischaltet.</span>
       </button>
     </div>
 
@@ -564,12 +564,13 @@
     <h2 data-i18n="info.privacyTitle">Offline, ohne Konto, ohne Werbung</h2>
     <p data-i18n="info.privacy">Alles läuft auf dem Gerät: keine Anmeldung, keine Werbung, kein Tracking, keine Server. Nach der Installation funktioniert die App ohne Internetverbindung.</p>
 
-    <h2 data-i18n="info.editionTitle">Deine Ausgabe</h2>
+    <h2 data-i18n="info.editionTitle">Deine Version</h2>
     <p id="info-edition" class="edition-line"></p>
     <p id="info-version" class="quiz-meta"></p>
     <div id="info-lite-box" class="pro-box" hidden>
-      <p data-i18n="info.liteHint">In der Lite-Ausgabe sind quadratische und trigonometrische Funktionen, die zweite Kurve, der Nachbau-Modus, eigene Quizze und der Bildexport nicht enthalten.</p>
-      <button id="btn-info-store" class="btn-primary" type="button" data-i18n="btn.getPro">Pro-Ausgabe ansehen</button>
+      <p data-i18n="info.liteHint">Kostenlos sind lineare und exponentielle Funktionen mit den fertigen Quizzen. Pro schaltet alles andere frei.</p>
+      <button id="btn-info-store" class="btn-primary" type="button" data-i18n="btn.buy">Pro freischalten</button>
+      <button id="btn-info-restore" class="btn-ghost" type="button" data-i18n="btn.restore">Käufe wiederherstellen</button>
     </div>
 
     <h2 data-i18n="info.contactTitle">Rückmeldung</h2>
@@ -607,11 +608,12 @@
 <!-- ====================== PRO-HINWEIS ====================== -->
 <dialog id="pro-dialog" class="dialog">
   <form method="dialog" class="dialog-inner">
-    <h3 data-i18n="pro.title">Das gehört zur Pro-Ausgabe</h3>
-    <p data-i18n="pro.text">Diese Funktion ist in der kostenlosen Lite-Ausgabe nicht enthalten. Die Pro-Ausgabe schaltet sie einmalig frei – ohne Abo, ohne Werbung.</p>
+    <h3 data-i18n="pro.title">Das gehört zu Pro</h3>
+    <p data-i18n="pro.text">Diese Funktion ist in der kostenlosen Version nicht enthalten. Ein einmaliger Kauf schaltet alles frei – ohne Abo, ohne Werbung.</p>
     <menu class="dialog-actions">
       <button value="cancel" class="btn-ghost" type="submit" data-i18n="btn.later">Später</button>
-      <button value="store" id="btn-pro-store" class="btn-primary" type="submit" data-i18n="btn.getPro">Pro-Ausgabe ansehen</button>
+      <button value="restore" class="btn-ghost" type="submit" data-i18n="btn.restore">Käufe wiederherstellen</button>
+      <button value="store" id="btn-pro-store" class="btn-primary" type="submit" data-i18n="btn.buy">Pro freischalten</button>
     </menu>
   </form>
 </dialog>

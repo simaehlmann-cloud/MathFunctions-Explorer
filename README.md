@@ -1,8 +1,9 @@
 # MathFunctions Explorer v7
 
 Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
-Läuft vollständig im Browser oder als Android-App — ohne Server, ohne Konto,
-ohne einen einzigen Netzwerkzugriff im laufenden Betrieb.
+Läuft vollständig im Browser oder als App für iPhone, iPad und Android —
+ohne Server, ohne Konto, ohne einen einzigen Netzwerkzugriff im laufenden
+Betrieb (außer dem freiwilligen In-App-Kauf über Apple).
 
 ---
 
@@ -14,6 +15,33 @@ python3 -m http.server 8000     # oder: npm run serve
 
 Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
 funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## 7.0.0 – eine App, In-App-Kauf, iOS
+
+Aufbau wie bei FairSeat:
+
+- **Keine Lite- und Pro-Ausgabe mehr.** Es gibt eine App
+  (`de.wisdompeak.mathfunctions`). Kostenlos sind lineare und exponentielle
+  Funktionen mit den fertigen Quizzen, Wettkampf und Fehlersuche. Ein
+  einmaliger In-App-Kauf **„Pro“** (`de.wisdompeak.mathfunctions.pro`, nicht
+  verbrauchbar) schaltet den Rest frei.
+- **Gesperrt wird nur in der iOS-App.** Im Browser und unter Android gibt es
+  vorerst keinen Kauf; dort steht alles frei. Vor einer Android-Version mit
+  Kauf braucht das Plugin eine Play-Billing-Seite.
+- **Kein Server.** StoreKit 2 prüft die von Apple signierte Transaktion auf
+  dem Gerät (`plugins-src/cordova-plugin-mfe-store`). Die App merkt sich nur
+  ja/nein, damit Pro offline erhalten bleibt.
+- **Cordova statt Capacitor**, damit Workflow und Kauf-Plugin aus FairSeat
+  unverändert laufen. `nav.js` hört auf Cordovas `backbutton`.
+- **Links und QR-Codes aus der App** zeigen auf die Web-Fassung
+  (`MFE.ui.publicBase()`), nicht auf `app://localhost`.
+- **Bildexport und Quiz-Sicherung** laufen in der App über das Teilen-Menü
+  (`MFE.ui.saveFile()`); WKWebView kennt kein `<a download>`.
+- **Arbeitsblatt drucken** ist in der App vorerst verborgen: WKWebView
+  ignoriert `window.print()`.
+- **Notch:** Die Kopfzeile rechnet `env(safe-area-inset-top)` ein.
 
 ---
 
@@ -405,32 +433,37 @@ recht.css                Stylesheet der Rechtsseiten (bewusst eigenständig)
 impressum.html           Anbieterkennzeichnung nach § 5 DDG
 datenschutz.html         Datenschutzerklärung, deutsch und englisch
 ueber.html               ausführliche Fassung von „Über die App"
-sw.js                    Service Worker für den Offline-Betrieb
-manifest.webmanifest     PWA-Manifest (Pro)
-manifest-lite.webmanifest        dasselbe für Lite
+sw.js                    Service Worker für den Offline-Betrieb (nur Web)
+manifest.webmanifest     PWA-Manifest
+config.xml               Cordova: Kennung, Version, Icons, Plugins (iOS, Android)
 
-js/licence.js            Weiche Lite/Pro, Verweis in den Play Store
-js/billing.js            Adapter für den Kauf über Google Play
+js/licence.js            Weiche kostenlos/Pro, Liste der gesperrten Funktionen
+js/billing.js            Adapter zum StoreKit-Plugin (Kauf, Wiederherstellen)
 js/i18n.js               alle Texte, deutsch und englisch
 js/functions.js          Zahleneingabe und Funktionskatalog
 js/graph.js              Renderer, Ausschnitt, Ableitung, Nullstellensuche
 js/diagnose.js           Fehlvorstellungen und Fehleranalyse
 js/nav.js                Bildschirmverlauf und Zurück-Knopf
 js/qr.js                 QR-Erzeugung, gegen eine Referenzbibliothek geprüft
-js/ui.js                 DOM-Helfer, Kurzmeldung, Reglergruppe
+js/ui.js                 DOM-Helfer, Kurzmeldung, Reglergruppe, Teilen, Web-Adresse
 js/quiz.js               Quiz-Baukasten: Speicher, Editor, Abspieler
 js/app.js                Zustand, Explorer, Wertetabelle, Navigation
 
-tools/build-www.mjs      erzeugt www/ in der Ausgabe pro oder lite
-tools/check.mjs          statischer Abgleich (IDs, Sprachen, Dateilisten)
-tools/smoke.mjs          Klickdurchlauf in jsdom
+plugins-src/cordova-plugin-mfe-store   In-App-Kauf (StoreKit 2, Swift), nur iOS
+res/ios/PrivacyInfo.xcprivacy          Datenschutz-Manifest für Apple
+res/android/                           Launcher-Icons (tools/make_android_icons.py)
+
+tools/build-www.mjs      erzeugt dist/ für die App (bindet cordova.js ein)
+tools/check.mjs          statischer Abgleich (IDs, Sprachen, Dateilisten, App-Hülle)
+tools/smoke.mjs          Klickdurchlauf in jsdom (Browser und iOS ohne Kauf)
 tools/qr-selftest.mjs    QR gegen hinterlegte Referenzcodes
 tools/qr-verify.mjs      QR modulweise gegen eine fremde Bibliothek
 tools/quiz-codec.mjs     Quiz-Kodierung: verlustfrei, kompakt, robust
 tools/diagnose-test.mjs  Fallenkatalog und Fehleranalyse
-tools/make_icons.py      erzeugt die Web-Icons neu (braucht Pillow)
-tools/make_android_icons.py  erzeugt die Launcher-Icons nach android-res/
-android-res/             fertige Launcher-Icons, vom Workflow übernommen
+tools/make_icons.py      Store-Icon icons/icon-1024.png (--web: auch Web-Icons)
+tools/make_ios_icons.py  iOS-Icons und Startbild, läuft im Workflow
+tools/make_android_icons.py  Launcher-Icons nach res/android/
+.github/workflows/       ios.yml (IPA, Upload), android.yml (APK/AAB), pages.yml (Web)
 ```
 
 Bewusst **ohne ES-Module**: Alle Dateien hängen sich an ein gemeinsames
@@ -440,20 +473,9 @@ in `index.html` ist damit die Ladereihenfolge und nicht beliebig.
 
 ---
 
-## Lite und Pro
+## Kostenlos und Pro
 
-Ein Quellcodezweig, zwei Ausgaben:
-
-```bash
-npm run build        # Pro
-npm run build:lite   # Lite
-```
-
-Das Skript nimmt genau vier Eingriffe vor: `DEV_EDITION` in `js/licence.js`,
-Manifest und Icon-Verweise in `index.html`, Cache-Name in `sw.js`. Zwei
-getrennte Zweige liefen erfahrungsgemäß innerhalb weniger Wochen auseinander.
-
-Was zur Pro-Ausgabe gehört, steht an genau einer Stelle — `PRO_FEATURES` in
+Was Pro freischaltet, steht an genau einer Stelle — `LOCKED` in
 `js/licence.js`. Die Oberfläche fragt ausschließlich über `licence.has(...)`:
 
 `cat.quadratic` · `cat.polynomial` · `cat.logarithm` · `cat.trig` ·
@@ -461,16 +483,20 @@ Was zur Pro-Ausgabe gehört, steht an genau einer Stelle — `PRO_FEATURES` in
 `randomQuiz` · `ownQuiz` · `practice` · `secondCurve` · `export` · `share` ·
 `drag` · `transform`
 
-Gesperrte Bedienelemente tragen ein PRO-Abzeichen; ein Klick öffnet einen
-Hinweis mit Verweis auf die Pro-Ausgabe im Play Store.
+Gesperrte Bedienelemente tragen ein PRO-Abzeichen; ein Tipp öffnet den
+Kauf-Dialog mit Preis aus dem App Store und „Käufe wiederherstellen“
+(Apple verlangt diesen Knopf). Beides steht auch unter *Über die App*.
 
-> **Wichtig und unverändert:** `licence.js` ist eine Weiche für die
-> Oberfläche, **kein Kopierschutz**. Wer die Entwicklerkonsole öffnet, ruft
-> `MFE.licence.setEdition('pro')` auf und hat Pro. Belastbar wird das erst,
-> wenn der Play-Billing-Token serverseitig gegen die Google Play Developer API
-> geprüft wird. Der Anschlusspunkt dafür ist `verifyWithServer()`. Für eine
-> Schul-App ist die jetzige Lösung meist hinnehmbar — man sollte nur wissen,
-> was man hat.
+Die iOS-App wird synchron an `window.cordova.platformId === 'ios'` erkannt.
+Dafür bindet `tools/build-www.mjs` `cordova.js` **vor** `js/licence.js` ein.
+Die Plugins kommen erst mit `deviceready`; bis dahin gilt der zuletzt
+gemerkte Kaufstand (`localStorage` `mfe:pro`). Danach gleicht `billing.js` mit
+StoreKit ab und hört auf Änderungen (Kaufen anfragen, Erstattung, anderes
+Gerät). Ist der App Store nicht erreichbar, bleibt der letzte Stand.
+
+> `licence.js` ist eine Weiche für die Oberfläche, **kein Kopierschutz**. Wer
+> an den WebView-Speicher kommt, kann `mfe:pro` setzen; StoreKit setzt es beim
+> nächsten Start zurück. Für eine Schul-App angemessen.
 
 Auch ein Deep Link kann die Sperre nicht umgehen: `readHash()` prüft die
 Funktionsklasse, bevor es einen Zustand übernimmt.
@@ -480,47 +506,84 @@ Funktionsklasse, bevor es einen Zustand übernimmt.
 ## Tests
 
 ```bash
-npm install     # einmalig, zieht jsdom
+npm ci          # einmalig, zieht jsdom
 npm test
 ```
 
-`tools/check.mjs` findet drei Fehlerarten, die sich hier am häufigsten
-einschleichen: eine gesuchte Element-ID, die es im HTML nicht mehr gibt; ein
-Übersetzungsschlüssel, der in einer Sprache fehlt; eine Datei, die im Service
-Worker steht, aber nicht existiert (ein einziger 404 lässt die gesamte
-Offline-Installation scheitern).
+`tools/check.mjs` findet u. a.: gesuchte Element-IDs, die es nicht gibt;
+fehlende Übersetzungen; Dateien im Service Worker, die fehlen; doppelt gesetzte
+CSS-Variablen; zu ähnliche Linienfarben. Seit 7.0.0 außerdem die App-Hülle:
+Versionsgleichstand mit `config.xml`, Produkt-ID passend zur Bundle-ID,
+vollständiges Kauf-Plugin, `ITSAppUsesNonExemptEncryption`, Foto-Hinweis,
+Privacy-Manifest mit CA92.1, Store-Icon 1024 px ohne Alphakanal, Capacitor-Reste
+und Links aus `location.origin`.
 
-`tools/check.mjs` prüft außerdem, dass keine CSS-Variable in einem Block
-zweimal gesetzt wird (die spätere gewinnt lautlos) und dass alle acht
-Linienfarben in beiden Farbschemata mindestens ΔE 25 auseinanderliegen —
-sonst sind sie auf einem Beamer nicht zu unterscheiden.
+`tools/smoke.mjs` startet die App in jsdom und klickt sie durch. Zweimal:
+als Browser (alles frei) und mit `locked` als iOS-App ohne Kauf. Dort mit
+nachgebautem StoreKit-Plugin: Sperren greifen, Preis im Kaufknopf, Abbruch,
+Wiederherstellen ohne Kauf, Kauf, Startseite danach ohne PRO, Erstattung,
+Wiederherstellen mit Kauf, App Store offline.
 
-`tools/qr-selftest.mjs` vergleicht die QR-Matrizen mit hinterlegten
-Referenzcodes. Diese stammen aus `tools/qr-verify.mjs`, das modulweise gegen
-die Python-Bibliothek `qrcode` abgleicht — 36 Fälle über die Versionen 1 bis
-34 und alle vier Fehlerkorrekturstufen, jedes Modul identisch.
+---
 
-`tools/smoke.mjs` startet die App in jsdom und klickt sie durch — Explorer,
-Regler, Brucheingabe, Wertetabelle, Quiz, Baukasten mit drei Aufgaben,
-Speichern, Link-Kodierung, Abspielen, Sprachwechsel. Einmal als Pro, einmal
-als Lite, dort mit der Erwartung, dass die Sperren greifen.
+## iOS: TestFlight und App Store
+
+Gebaut wird auf GitHub (`.github/workflows/ios.yml`, macOS-Läufer), wie bei
+FairSeat. Ein Mac ist nicht nötig.
+
+### Einmalig bei Apple
+
+1. developer.apple.com → Identifiers: neue App-ID **`de.wisdompeak.mathfunctions`**
+   (Capability *In-App Purchase* ist Standard)
+2. Profiles: neues **App Store**-Provisioning-Profil für diese App-ID
+3. App Store Connect: neue App, Bundle-ID wie oben, SKU frei wählbar
+4. App → *App-Datenschutz*: **„Keine Daten erfasst“**;
+   Datenschutz-URL: `https://simaehlmann-cloud.github.io/MathFunctions-Explorer/datenschutz.html`
+5. Kategorie *Bildung*. **Nicht** die Kids-Kategorie (strengere Regeln).
+
+Aus FairSeat/FairMix weiterverwendbar (gleiches Konto): Distribution-Zertifikat,
+Team-ID, Signing-Identity und App-Store-Connect-API-Schlüssel. Neu ist nur das
+Profil. Secrets gelten **je Repo** — also hier noch einmal anlegen:
+
+| Secret | Inhalt |
+|---|---|
+| `IOS_CERTIFICATE_P12_BASE64` | Distribution-Zertifikat als .p12, base64 (wie FairSeat) |
+| `IOS_CERTIFICATE_PASSWORD` | Passwort der .p12 (wie FairSeat) |
+| `IOS_PROVISIONING_PROFILE` | das **neue** .mobileprovision, base64 |
+| `IOS_TEAM_ID` | zehnstellige Team-ID (wie FairSeat) |
+| `IOS_SIGNING_IDENTITY` | z. B. `Apple Distribution: Simon Mählmann (TEAMID)` |
+| `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` | App-Store-Connect-API (wie FairSeat) |
+
+Upload: *Actions → Build MathFunctions Explorer (iOS) → Run workflow*. Nur der
+manuelle Start lädt hoch, damit nicht jeder Push eine Build-Nummer verbraucht.
+Die Verarbeitung dauert 5–30 Minuten; danach steht der Build in TestFlight.
+Interne Tester sofort, externe nach einer Beta-Prüfung.
+
+### In-App-Kauf „Pro“
+
+- Voraussetzung: Vertrag **Kostenpflichtige Apps** aktiv (Steuer- und Bankdaten).
+  Gilt auch für eine kostenlose App mit Kauf. Kann dauern.
+- App → **Monetarisierung → In-App-Käufe → +** → Typ **Nicht verbrauchbar**,
+  Produkt-ID **`de.wisdompeak.mathfunctions.pro`** (exakt so), Preis,
+  Anzeigename/Beschreibung DE und EN, Screenshot des Kauf-Dialogs für die Prüfung.
+- Den ersten Kauf **zusammen mit einer App-Version** einreichen.
+- In TestFlight wird nichts abgebucht. Ohne angelegtes Produkt meldet die App
+  „Kauf gerade nicht möglich“ — der Rest der App lässt sich trotzdem testen.
+- Empfehlung: *App Store Small Business Program* beantragen (15 % statt 30 %).
+
+### Screenshots
+
+Die App ist universell (iPhone und iPad). Für die Prüfung verlangt Apple
+iPhone-6,9-Zoll- (1290×2796) und iPad-13-Zoll-Bilder (2048×2732). Für TestFlight
+sind sie nicht nötig.
 
 ---
 
 ## Android: APK und AAB
 
-Verpackt wird mit **Capacitor**: Die Web-Dateien liegen *in* der App, es wird
-nichts nachgeladen.
-
-### Über GitHub (kein Android Studio nötig)
-
-`.github/workflows/android.yml` läuft bei jedem Push auf `main` und auf Klick
-unter *Actions → Android → Run workflow*. Ergebnis: je eine **Debug-APK** für
-Pro und Lite, herunterzuladen unter *Artifacts*. Die lässt sich direkt auf ein
-Telefon ziehen und installieren — ohne Keystore.
-
-Sobald der Keystore existiert, vier Secrets hinterlegen
-(*Settings → Secrets and variables → Actions*):
+`.github/workflows/android.yml` baut mit Cordova (aus FairSeat übernommen):
+bei jedem Push eine **Debug-APK**, mit den vier Secrets zusätzlich signierte
+APK und AAB als Artefakte.
 
 | Secret | Inhalt |
 |---|---|
@@ -529,63 +592,37 @@ Sobald der Keystore existiert, vier Secrets hinterlegen
 | `ANDROID_KEY_ALIAS` | Alias des Schlüssels |
 | `ANDROID_KEY_PASSWORD` | Passwort des Schlüssels |
 
-Ein Tag `v4.0.1` erzeugt dann zusätzlich **signierte APK und signiertes AAB**
-und hängt beide an die GitHub-Release. Fehlen die Secrets, läuft der Lauf
-trotzdem grün durch und legt die unsignierten Dateien ab.
+Ist die App schon in der Play Console angelegt, **denselben Keystore**
+weiterverwenden. Die versionCode ist jetzt 70000·1000 + Laufnummer und damit
+größer als alle bisherigen.
 
-Keystore erzeugen:
-
-```bash
-keytool -genkeypair -v -keystore mein.keystore -alias mathfunctions \
-        -keyalg RSA -keysize 4096 -validity 10000
-```
-
-> Geht dieser Schlüssel verloren, lässt sich die App im Play Store **nie
-> wieder** aktualisieren. Sicherungskopie außerhalb von GitHub aufbewahren.
-> `.gitignore` sperrt `*.keystore` und `*.jks` bereits.
-
-### Lokal
-
-```bash
-npm install
-npm run android:add      # legt android/ an (einmalig)
-npm run android:open     # öffnet Android Studio
-```
-
-Der Ordner `android/` fehlt absichtlich im Repo — er wird erzeugt. Der
-Workflow legt ihn selbst an, wenn er fehlt.
-
-### Anwendungskennung
-
-`capacitor.config.json` steht auf `de.wisdompeak.mathfunctions`. Die
-Lite-Ausgabe bekommt im Workflow automatisch `.lite` angehängt, damit beide
-nebeneinander im Play Store stehen und gleichzeitig installiert sein können.
-Der Verweis in den Store zeigt in beiden Ausgaben auf die **Pro**-Kennung —
-das ist Absicht und steht so in `js/licence.js`.
+> Geht der Schlüssel verloren, lässt sich die App im Play Store **nie
+> wieder** aktualisieren. `.gitignore` sperrt `*.keystore`, `*.jks`, `*.p12`,
+> `*.p8` und `*.mobileprovision`.
 
 ---
 
-## Vor der Veröffentlichung
+## Version anheben
 
-- [ ] Anwendungskennung prüfen (`capacitor.config.json`, `PRO_APP_ID` in `js/licence.js`)
-- [ ] `PRODUCT_ID` in `js/billing.js` gegen die Play Console abgleichen
-- [ ] Billing-Plugin installieren: `npm install cordova-plugin-purchase`
-- [ ] `STORE_LIVE` in `js/licence.js` und `BILLING_READY` in `js/billing.js` auf `true`
-- [ ] Impressum und Datenschutzerklärung von jemandem mit Zulassung durchsehen lassen
-- [ ] Datenschutz-Formular der Play Console ausfüllen (Antwort: keine Datenerhebung)
-- [ ] Keystore anlegen, sichern, Secrets hinterlegen
-- [ ] Auf einem echten Telefon testen — jsdom kann kein Canvas
+Vier Stellen, `tools/check.mjs` prüft den Gleichstand:
+
+1. `package.json` → `version`
+2. `config.xml` → `version`, `android-versionCode`, `ios-CFBundleVersion`
+   (Code = Haupt·10000 + Neben·100 + Patch, z. B. 7.0.1 → 70001)
+3. `js/app.js` → `APP_VERSION`
+4. `sw.js` → `const CACHE = 'mfe-v…-__BUILD__'`
 
 ---
 
 ## Datenschutz in einem Satz
 
-Es gibt keinen Server. Einstellungen, Buchstaben und eigene Quizze liegen im
-`localStorage` des Geräts. Der einzige Netzwerkzugriff, den die App überhaupt
-auslösen kann, ist der Kauf der Pro-Ausgabe über Google Play und der Verweis
-in den Store. Einzelheiten in `datenschutz.html`.
+Es gibt keinen Server. Einstellungen, Buchstaben, eigene Quizze und das
+Kaufmerkmal liegen im `localStorage` des Geräts. Der einzige Netzwerkzugriff,
+den die App auslösen kann, ist der freiwillige Kauf über den App Store.
+Einzelheiten in `datenschutz.html`.
 
 ## Lizenz
 
 Eigene Inhalte und Code: Simon Mählmann, Wisdompeak Apps.
-Fremdbestandteil: Capacitor (MIT).
+Fremdbestandteile: Apache Cordova (Apache 2.0), cordova-plugin-statusbar
+(Apache 2.0), cordova-plugin-x-socialsharing (MIT).

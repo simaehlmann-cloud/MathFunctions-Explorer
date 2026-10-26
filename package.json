@@ -1,34 +1,42 @@
 {
   "name": "mathfunctions-explorer",
-  "version": "6.6.1",
-  "description": "Interaktiver Funktionenplotter für den Mathematikunterricht",
+  "version": "7.0.0",
+  "description": "Interaktiver Funktionenplotter für den Mathematikunterricht (Web, iOS und Android über Cordova)",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "node tools/build-www.mjs",
-    "build:lite": "node tools/build-www.mjs lite",
     "check": "node tools/check.mjs",
     "icons": "python3 tools/make_icons.py",
     "serve": "python3 -m http.server 8000",
-    "android:add": "npm run build && npx cap add android",
-    "android:sync": "npm run build && npx cap sync android",
-    "android:open": "npm run android:sync && npx cap open android",
     "smoke": "node tools/smoke.mjs",
-    "smoke:lite": "node tools/smoke.mjs lite",
-    "test": "npm run check && npm run qr && npm run codec && npm run diagnose && npm run audit && npm run smoke && npm run smoke:lite",
+    "test": "npm run check && npm run qr && npm run codec && npm run diagnose && npm run audit && npm run smoke && npm run smoke:locked",
     "qr": "node tools/qr-selftest.mjs",
     "codec": "node tools/quiz-codec.mjs",
     "icons:android": "python3 tools/make_android_icons.py",
     "diagnose": "node tools/diagnose-test.mjs",
-    "audit": "node tools/audit.mjs"
+    "audit": "node tools/audit.mjs",
+    "smoke:locked": "node tools/smoke.mjs locked",
+    "icons:ios": "python3 tools/make_ios_icons.py"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.2.0",
+    "cordova-ios": "^8.1.1",
+    "cordova-plugin-mfe-store": "file:plugins-src/cordova-plugin-mfe-store",
+    "cordova-plugin-statusbar": "^4.0.0",
+    "cordova-plugin-x-socialsharing": "^6.0.4",
+    "es6-promise-plugin": "^4.2.2",
     "jsdom": "^25.0.0"
   },
-  "dependencies": {
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/android": "^6.2.0",
-    "@capacitor/app": "^6.0.2"
+  "cordova": {
+    "plugins": {
+      "cordova-plugin-statusbar": {},
+      "cordova-plugin-x-socialsharing": {
+        "PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION": "This app requires photo library access to function properly.",
+        "PHOTO_LIBRARY_USAGE_DESCRIPTION": "This app requires photo library access to function properly."
+      },
+      "cordova-plugin-mfe-store": {}
+    },
+    "platforms": [
+      "ios"
+    ]
   }
 }

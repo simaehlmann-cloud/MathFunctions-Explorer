@@ -1,0 +1,117 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Cordova-Konfiguration fuer iOS und Android (Aufbau wie FairSeat).
+     Version an vier Stellen gleich halten: hier, package.json, sw.js (Cache-Name)
+     und APP_VERSION in js/app.js. tools/check.mjs prueft das.
+     versionCode = Haupt*10000 + Neben*100 + Patch (7.0.0 -> 70000).
+     Die Workflows haengen die Laufnummer an, damit jeder Upload eine neue
+     Build-Nummer hat. -->
+<widget id="de.wisdompeak.mathfunctions"
+        version="7.0.0"
+        android-versionCode="70000"
+        ios-CFBundleVersion="70000"
+        xmlns="http://www.w3.org/ns/widgets"
+        xmlns:cdv="http://cordova.apache.org/ns/1.0">
+
+    <!-- short = Name unter dem Icon. Der volle Name waere dort abgeschnitten. -->
+    <name short="MathFunctions">MathFunctions Explorer</name>
+    <description>Interaktiver Funktionenplotter für den Mathematikunterricht: Funktionen erkunden, Ableitung und Sekante, Quizze und Wettkampf. Läuft vollständig offline.</description>
+    <author email="smaehlmann.appdev@gmail.com">Wisdompeak Apps – Simon Mählmann</author>
+
+    <content src="index.html" />
+
+    <!-- Offline-App: kein <access origin="*">. Links nach aussen (Rechtstexte
+         im Web, Mail) oeffnen im System-Browser, nicht im WebView. -->
+    <allow-intent href="mailto:*" />
+    <allow-intent href="https://*/*" />
+
+    <preference name="DisallowOverscroll" value="true" />
+    <preference name="Fullscreen" value="false" />
+    <!-- Graphen werden oft quer betrachtet; Tablet mit Tabelle daneben -->
+    <preference name="Orientation" value="default" />
+    <preference name="BackgroundColor" value="0xff0f1a33" />
+
+    <platform name="android">
+        <preference name="android-minSdkVersion"     value="24" />
+        <preference name="android-targetSdkVersion"  value="36" />
+        <preference name="android-compileSdkVersion" value="36" />
+        <preference name="AndroidInsecureFileModeEnabled" value="false" />
+        <preference name="AndroidXEnabled" value="true" />
+
+        <preference name="AndroidWindowSplashScreenBackground" value="#0f1a33" />
+        <preference name="AndroidWindowSplashScreenAnimatedIcon" value="res/android/icon_fg_xxxhdpi.png" />
+
+        <resource-file src="res/android/colors.xml" target="/app/src/main/res/values/mfe_colors.xml" />
+
+        <icon density="ldpi"    background="@color/mfe_icon_background" foreground="res/android/icon_fg_ldpi.png"    src="res/android/icon_ldpi.png" />
+        <icon density="mdpi"    background="@color/mfe_icon_background" foreground="res/android/icon_fg_mdpi.png"    src="res/android/icon_mdpi.png" />
+        <icon density="hdpi"    background="@color/mfe_icon_background" foreground="res/android/icon_fg_hdpi.png"    src="res/android/icon_hdpi.png" />
+        <icon density="xhdpi"   background="@color/mfe_icon_background" foreground="res/android/icon_fg_xhdpi.png"   src="res/android/icon_xhdpi.png" />
+        <icon density="xxhdpi"  background="@color/mfe_icon_background" foreground="res/android/icon_fg_xxhdpi.png"  src="res/android/icon_xxhdpi.png" />
+        <icon density="xxxhdpi" background="@color/mfe_icon_background" foreground="res/android/icon_fg_xxxhdpi.png" src="res/android/icon_xxxhdpi.png" />
+    </platform>
+
+    <platform name="ios">
+        <!-- Wie FairSeat: StoreKit 2 braucht iOS 15 -->
+        <preference name="deployment-target" value="15.0" />
+        <!-- Das Kauf-Plugin ist in Swift geschrieben -->
+        <preference name="SwiftVersion" value="5.0" />
+
+        <!-- iPhone und iPad. Ab 860 px Breite stehen Graph und Wertetabelle
+             nebeneinander. Apple verlangt fuer universelle Apps zusaetzlich
+             iPad-Screenshots (13 Zoll) - erst zur Pruefung, nicht fuer TestFlight. -->
+        <preference name="target-device" value="universal" />
+
+        <!-- Wischen von links fuehrt aus den Rechtstexten zurueck zur App -->
+        <preference name="AllowBackForwardNavigationGestures" value="true" />
+
+        <!-- Die App liegt unter der Statusleiste (viewport-fit=cover); die
+             Kopfzeile rechnet env(safe-area-inset-top) ein. Die Schriftfarbe
+             der Statusleiste setzt js/app.js passend zum Thema. -->
+        <preference name="StatusBarOverlaysWebView" value="true" />
+        <preference name="StatusBarStyle" value="default" />
+
+        <!-- Keine eigene Verschluesselung - sonst fragt App Store Connect bei
+             jedem Upload nach der Exportkontrolle. -->
+        <edit-config target="ITSAppUsesNonExemptEncryption" file="*-Info.plist" mode="overwrite">
+            <false/>
+        </edit-config>
+
+        <!-- Bildexport laeuft ueber das Teilen-Menue; dort kann "Bild sichern"
+             gewaehlt werden. Ohne diese Texte beendet iOS die App bzw. lehnt
+             Apple den Build ab (Erfahrung aus FairMix/FairSeat). -->
+        <edit-config target="NSPhotoLibraryAddUsageDescription" file="*-Info.plist" mode="overwrite">
+            <string>MathFunctions Explorer speichert auf deinen Wunsch ein Bild des Graphen in deiner Fotomediathek. Es werden keine vorhandenen Fotos gelesen.</string>
+        </edit-config>
+        <edit-config target="NSPhotoLibraryUsageDescription" file="*-Info.plist" mode="overwrite">
+            <string>MathFunctions Explorer speichert auf deinen Wunsch ein Bild des Graphen in deiner Fotomediathek. Vorhandene Fotos werden weder gelesen noch verändert.</string>
+        </edit-config>
+
+        <!-- Privacy-Manifest: kein resource-file (doppelte Kopie in Xcode).
+             Der Workflow ersetzt das von cordova-ios erzeugte Manifest. -->
+
+        <icon src="res/ios/icon-20.png"   width="20"   height="20" />
+        <icon src="res/ios/icon-29.png"   width="29"   height="29" />
+        <icon src="res/ios/icon-40.png"   width="40"   height="40" />
+        <icon src="res/ios/icon-58.png"   width="58"   height="58" />
+        <icon src="res/ios/icon-60.png"   width="60"   height="60" />
+        <icon src="res/ios/icon-76.png"   width="76"   height="76" />
+        <icon src="res/ios/icon-80.png"   width="80"   height="80" />
+        <icon src="res/ios/icon-87.png"   width="87"   height="87" />
+        <icon src="res/ios/icon-120.png"  width="120"  height="120" />
+        <icon src="res/ios/icon-152.png"  width="152"  height="152" />
+        <icon src="res/ios/icon-167.png"  width="167"  height="167" />
+        <icon src="res/ios/icon-180.png"  width="180"  height="180" />
+        <icon src="res/ios/icon-1024.png" width="1024" height="1024" />
+
+        <splash src="res/ios/Default@2x~universal~anyany.png" />
+    </platform>
+
+    <plugin name="cordova-plugin-statusbar" spec="^4.0.0" />
+    <!-- Bildexport und Quiz-Sicherung ueber das Teilen-Menue (data:-URI).
+         WKWebView kennt kein <a download>. Siehe saveFile() in js/ui.js. -->
+    <plugin name="cordova-plugin-x-socialsharing" spec="^6.0.4" />
+    <!-- In-App-Kauf "Pro" (StoreKit 2). Eigenes kleines Plugin im Ordner
+         plugins-src, nur iOS. Produkt-ID: de.wisdompeak.mathfunctions.pro
+         Der Pfad gilt vom Build-Ordner aus (build/ liegt im Repository). -->
+    <plugin name="cordova-plugin-mfe-store" spec="../plugins-src/cordova-plugin-mfe-store" />
+</widget>
