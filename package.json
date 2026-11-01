@@ -1,6 +1,6 @@
 {
   "name": "mathfunctions-explorer",
-  "version": "7.1.0",
+  "version": "7.1.1",
   "description": "Interaktiver Funktionenplotter für den Mathematikunterricht (Web, iOS und Android über Cordova)",
   "private": true,
   "scripts": {

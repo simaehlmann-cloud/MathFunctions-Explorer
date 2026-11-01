@@ -6,9 +6,9 @@
      Die Workflows haengen die Laufnummer an, damit jeder Upload eine neue
      Build-Nummer hat. -->
 <widget id="de.wisdompeak.mathfunctions"
-        version="7.1.0"
-        android-versionCode="70100"
-        ios-CFBundleVersion="70100"
+        version="7.1.1"
+        android-versionCode="70101"
+        ios-CFBundleVersion="70101"
         xmlns="http://www.w3.org/ns/widgets"
         xmlns:cdv="http://cordova.apache.org/ns/1.0">
 

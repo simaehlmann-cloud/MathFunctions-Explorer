@@ -60,17 +60,19 @@
   --deriv: #7dd3fc;
   --tangent: #facc15;
   --trace: #cbd5e1;
-  --bg: #0b1220;
-  --surface: #17223a;
-  --surface-2: #101a2e;
-  --text: #e8eefc;
-  --muted: #9aa8c4;
-  --border: #2a3550;
+  /* 7.1.1: Graphit statt Nachtblau. Auf dem blaustichigen Grund gingen
+     die Klassenfarben unter, und bei Blau (linear) verschwamm alles. */
+  --bg: #121417;
+  --surface: #1c1f24;
+  --surface-2: #16181c;
+  --text: #eef0f3;
+  --muted: #a4aab4;
+  --border: #30353d;
   --accent: #60a5fa;
   --on-accent: #06152e;
-  --grid: #24314d;
-  --grid-strong: #35456a;
-  --axis: #cbd5e1;
+  --grid: #2a2f37;
+  --grid-strong: #3b414b;
+  --axis: #d4d8de;
   /* ACHTUNG: Diese Zeile stand frueher WEITER UNTEN im selben Block und hat
      die daraus abgeleiteten neuen Werte oben ueberschrieben - der
      Farbkonflikt zwischen Kurve und Parameter war im Dunkelmodus damit nie
@@ -701,8 +703,8 @@ th.col-extra { font-family: var(--ff-ui); font-style: normal; }
   --graph2: #c2410c;
 }
 :root[data-display="beamer"][data-theme="dark"] {
-  --grid: #46567c;
-  --grid-strong: #6b7ca8;
+  --grid: #4a515c;
+  --grid-strong: #6e7682;
   --axis: #f1f5f9;
   --graph2: #fdba74;
   --tangent: #fde047;
@@ -969,19 +971,25 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 [data-cat="exponential"] { --cat: var(--c-exponential); --cat-ink: var(--ink-exponential); }
 [data-cat="trig"]        { --cat: var(--c-trig);        --cat-ink: var(--ink-trig); }
 [data-cat="more"]        { --cat: var(--c-more);        --cat-ink: var(--ink-more); }
+/* Wie kraeftig die Klassenfarbe in Flaechen steht. Im Dunkeln braucht es
+   deutlich mehr, sonst bleibt nur ein dunkler Kasten mit farbigem Rand. */
+:root { --tint-pct: 10%; --soft-pct: 20%; --line-pct: 40%; }
+:root[data-theme="dark"] { --tint-pct: 17%; --soft-pct: 30%; --line-pct: 55%; }
 [data-cat] {
-  --cat-tint: color-mix(in srgb, var(--cat) 9%, var(--surface));
-  --cat-soft: color-mix(in srgb, var(--cat) 16%, var(--surface));
-  --cat-line: color-mix(in srgb, var(--cat) 38%, var(--border));
+  --cat-tint: color-mix(in srgb, var(--cat) var(--tint-pct), var(--surface));
+  --cat-soft: color-mix(in srgb, var(--cat) var(--soft-pct), var(--surface));
+  --cat-line: color-mix(in srgb, var(--cat) var(--line-pct), var(--border));
 }
 
 /* --- Startseite ----------------------------------------------------------- */
+:root { --glow: 13%; }
+:root[data-theme="dark"] { --glow: 20%; }
 #screen-home.is-active {
   min-height: calc(100dvh - var(--header-h));
   background:
-    radial-gradient(900px 360px at 0% -8%, color-mix(in srgb, var(--c-linear) 13%, transparent), transparent 70%),
-    radial-gradient(760px 320px at 100% 0%, color-mix(in srgb, var(--c-exponential) 11%, transparent), transparent 70%),
-    radial-gradient(700px 300px at 50% 105%, color-mix(in srgb, var(--c-quadratic) 9%, transparent), transparent 70%);
+    radial-gradient(900px 360px at 0% -8%, color-mix(in srgb, var(--c-linear) var(--glow), transparent), transparent 70%),
+    radial-gradient(760px 320px at 100% 0%, color-mix(in srgb, var(--c-exponential) var(--glow), transparent), transparent 70%),
+    radial-gradient(700px 300px at 50% 105%, color-mix(in srgb, var(--c-quadratic) var(--glow), transparent), transparent 70%);
 }
 .eyebrow {
   display: inline-block; padding: .28rem .7rem; border-radius: 999px;
@@ -999,7 +1007,7 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 .fn-form .radicand { border-top: 1px solid currentColor; padding: 0 .12em; }
 
 .cat-card {
-  background: var(--cat-tint);
+  background: linear-gradient(160deg, var(--cat-soft), var(--cat-tint) 70%);
   border-color: var(--cat-line);
   border-top: 5px solid var(--cat);
 }
@@ -1065,12 +1073,12 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 /* --- Funktionsseite ------------------------------------------------------- */
 #screen-app.is-active {
   min-height: calc(100dvh - var(--header-h));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--cat, var(--accent)) 9%, var(--bg)) 0, var(--bg) 340px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cat, var(--accent)) var(--soft-pct), var(--bg)) 0, var(--bg) 380px);
 }
 #screen-app .tabs {
   align-items: center;
-  background: color-mix(in srgb, var(--cat, var(--accent)) 7%, var(--surface));
-  border-bottom: 2px solid var(--cat-line, var(--border));
+  background: color-mix(in srgb, var(--cat, var(--accent)) var(--tint-pct), var(--surface));
+  border-bottom: 3px solid var(--cat, var(--border));
 }
 #screen-app .tab-btn.is-active { color: var(--cat-ink, var(--accent)); border-bottom-color: var(--cat, var(--accent)); }
 .cat-badge {
@@ -1083,6 +1091,15 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 @media (max-width: 560px) { .cat-badge { display: none; } }
 
 #tab-explorer .controls-panel { border-top: 4px solid var(--cat, var(--accent)); }
+/* Hauptknoepfe ("Tabelle berechnen", "Naechste Aufgabe", ...) in der
+   Klassenfarbe statt im immer gleichen Hellblau. */
+#screen-app .btn-primary {
+  background: var(--cat-ink, var(--accent)); color: var(--on-ink);
+  border-color: var(--cat-ink, var(--accent));
+}
+#screen-app .seg-btn.is-active { color: var(--cat-ink, var(--accent)); }
+#screen-app.is-split #tab-table { border-top: 4px solid var(--cat, var(--accent)); }
+#screen-app th { color: var(--cat-ink, var(--text)); }
 #tab-explorer .panel-section > summary { color: var(--cat-ink, var(--text)); }
 #tab-explorer .live-panel {
   padding: .75rem;

@@ -18,7 +18,7 @@
    Auslieferung einen eigenen Zwischenspeicher, und der alte wird beim
    Aktivieren geloescht (siehe unten). Bleibt sie stehen - beim direkten
    Ausliefern des Quelltextes -, zaehlt die Versionsnummer. */
-const CACHE = 'mfe-v7.1.0-__BUILD__';
+const CACHE = 'mfe-v7.1.1-__BUILD__';
 const ASSETS = [
   './',
   './index.html',

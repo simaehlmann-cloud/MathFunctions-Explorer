@@ -18,6 +18,17 @@ funktioniert auch (`file://`), nur ohne Service Worker.
 
 ---
 
+## 7.1.1 – Dunkles Farbschema
+
+Rückmeldung vom iPad im Dunkelmodus: alles sehr blau und düster. Der Grund ist
+jetzt Graphit statt Nachtblau, damit die Klassenfarben nicht im Blau
+untergehen. Karten und Flächen tragen im Dunkeln deutlich mehr Klassenfarbe
+(`--tint-pct`, `--soft-pct`, `--line-pct`), die Karten haben einen Verlauf.
+Hauptknöpfe wie „Tabelle berechnen“ stehen auf der Funktionsseite in der
+Klassenfarbe statt im festen Hellblau.
+
+---
+
 ## 7.1.0 – Farbe, Graph im Mittelpunkt, Vollbild
 
 **Startseite.** Vier große Karten für die Klassen der Mittelstufe (linear,
