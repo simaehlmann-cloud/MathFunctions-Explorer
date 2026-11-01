@@ -12,7 +12,7 @@ const { clamp, tolerance, fmt, mfmt, parseLoose, FUNCTIONS, CATEGORY_FORMS } = M
 const { Graph, drawScene, normalizeView, zoomView, panView, zoomFactorOf, bindViewControl,
         fitY, DEFAULT_VIEW,
         CURVE_COLORS } = MFE.graph;
-const { $, $$, debounce, toast, renderSliderGroup, setValue: uiSetValue, setSnap } = MFE.ui;
+const { $, $$, debounce, toast, renderSliderGroup, setValue: uiSetValue, setSnap, setMath } = MFE.ui;
 const licence = MFE.licence;
 const t = (k, v) => MFE.i18n.t(k, v);
 const C = (n) => MFE.colors.get(n);
@@ -29,7 +29,7 @@ const BEAMER_SCALE = 1.55;
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '7.0.0';
+const APP_VERSION = '7.1.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -52,7 +52,8 @@ const state = {
   theme: 'light',
   display: 'normal',              // 'normal' oder 'beamer'
   snap: true,
-  split: true,          // Wertetabelle neben dem Graphen, wenn Platz ist
+  split: false,         // Wertetabelle neben dem Graphen (nur wenn Platz ist).
+                        // Aus: zu Beginn steht der Graph im Mittelpunkt.
   view: { ...DEFAULT_VIEW },
   piAxis: false,
   tangentX: 1,
@@ -65,12 +66,30 @@ const state = {
   /* Spur: die zuletzt eingestellten Zustaende, aelteste zuerst. */
   trail: [],
   table: { diff: false, quot: false },
-  opts: {
-    helpers: true, roots: false, yint: false, vertex: false,
-    drag: false, intersections: false, derivative: false, tangent: false, trace: false,
-    secant: false, trail: false, locus: false, showTerm: true
-  }
+  opts: null            // siehe DEFAULT_OPTS
 };
+
+/* Anzeigen im Graphen zu Beginn: alles aus, nur die Gleichung mit Zahlen an.
+   Gilt beim ersten Start und bei jeder Klasse, die auf der Startseite neu
+   gewaehlt wird. Wer die App nur kurz verlaesst, behaelt seinen Stand. */
+const DEFAULT_OPTS = Object.freeze({
+  helpers: false, roots: false, yint: false, vertex: false,
+  drag: false, intersections: false, derivative: false, tangent: false, trace: false,
+  secant: false, trail: false, locus: false, showTerm: true
+});
+state.opts = { ...DEFAULT_OPTS };
+
+/* Fassung der gespeicherten Einstellungen. 7.1 hat die Voreinstellungen
+   geaendert (Tabelle und Hilfslinien aus). Gespeicherte Werte aus aelteren
+   Fassungen werden dafuer EINMAL verworfen - Sprache, Farbschema,
+   Beamer-Modus und die eigenen Buchstaben bleiben erhalten. */
+const SETTINGS_REV = 2;
+let settingsMigrated = false;
+
+/* Startseite: die vier grossen Karten. Alles andere liegt unter "Weitere
+   Funktionen" und teilt sich dort eine Farbe. */
+const MAIN_CATS = new Set(['linear', 'quadratic', 'exponential', 'trig']);
+const catGroup = (cat) => (MAIN_CATS.has(cat) ? cat : 'more');
 const TRAIL_MAX = 14;
 const TRAIL_MIN_MS = 70;      // dichter waere nur noch ein Farbverlauf
 let lastTrailAt = 0;
@@ -112,7 +131,12 @@ function loadSettings() {
     if (s.theme === 'dark' || s.theme === 'light') state.theme = s.theme;
     if (s.display === 'beamer' || s.display === 'normal') state.display = s.display;
     if (typeof s.snap === 'boolean') state.snap = s.snap;
-    if (typeof s.split === 'boolean') state.split = s.split;
+    if (s.rev === SETTINGS_REV) {
+      if (typeof s.split === 'boolean') state.split = s.split;
+    } else {
+      // Aeltere Fassung: neue Voreinstellung uebernehmen, einmalig.
+      settingsMigrated = true;
+    }
     for (const [form, map] of Object.entries(s.symbols || {})) {
       if (!FUNCTIONS[form]) continue;
       ensureSymbols(form);
@@ -125,6 +149,7 @@ function loadSettings() {
 const saveSettings = debounce(() => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      rev: SETTINGS_REV,
       lang: MFE.i18n.lang, theme: state.theme, display: state.display,
       snap: state.snap, split: state.split, symbols: state.symbols
     }));
@@ -189,8 +214,12 @@ function loadSession() {
   }
   if (curves.length === 2 && !licence.has('secondCurve')) curves.length = 1;
 
-  const opts = { ...state.opts };
-  for (const k of Object.keys(opts)) if (typeof s.opts?.[k] === 'boolean') opts[k] = s.opts[k];
+  const opts = { ...DEFAULT_OPTS };
+  // Nach dem Wechsel auf die neuen Voreinstellungen (7.1) einmal frisch
+  // beginnen; danach gilt wieder der gespeicherte Stand.
+  if (!settingsMigrated) {
+    for (const k of Object.keys(opts)) if (typeof s.opts?.[k] === 'boolean') opts[k] = s.opts[k];
+  }
   if (!licence.has('drag')) opts.drag = false;
   if (!licence.has('calculus')) { opts.derivative = false; opts.tangent = false; opts.secant = false; }
   if (curves.length < 2) opts.intersections = false;
@@ -644,6 +673,11 @@ function updateOptionAvailability() {
   $('#opt-intersections').closest('.chip').hidden = state.curves.length < 2;
   // Ortskurve gibt es nur, wo ein Scheitelpunkt zu wandern hat.
   $('#opt-locus').closest('.chip').hidden = !def().vertex;
+  // Eine Gruppe ohne sichtbaren Schalter soll nicht als leere Ueberschrift
+  // stehen bleiben.
+  for (const g of $$('.chip-group')) {
+    g.hidden = !Array.from(g.querySelectorAll('.chip')).some(c => !c.hidden);
+  }
   updateSecantRow();
   updateFreezeButton();
   updateTrailButton();
@@ -654,10 +688,30 @@ function updateOptionAvailability() {
  *  haengt; beides nebeneinander macht ihn sichtbar. */
 function renderEquationValue(container, i) {
   const cu = state.curves[i];
-  container.textContent = `${curveName(i)}(x) = ${FUNCTIONS[cu.form].rhs(cu.values)}`;
+  setMath(container, `${curveName(i)}(x) = ${FUNCTIONS[cu.form].rhs(cu.values)}`);
+}
+
+/** Farbe und Abzeichen der aktuellen Klasse. Nur der Rahmen der Seite
+ *  traegt die Farbe - Kurve und Parameter behalten ihre festen Farben. */
+function applyCatColor() {
+  const cat = FUNCTIONS[curve(0).form].category;
+  const app = $('#screen-app');
+  if (app) app.dataset.cat = catGroup(cat);
+  const badge = $('#cat-badge');
+  if (badge) badge.textContent = t('cat.' + cat);
+  renderPracticeCard();
+}
+
+/** Beschreibung der Uebungskarte auf der Startseite: geuebt wird immer die
+ *  Klasse, die gerade im Explorer offen ist. */
+function renderPracticeCard() {
+  const el = $('#card-practice-desc');
+  if (!el) return;
+  el.textContent = t('home.practiceDesc', { cat: t('cat.' + FUNCTIONS[curve(0).form].category) });
 }
 
 function updateExplorer() {
+  applyCatColor();
   renderCurveSwitcher();
   renderFormSelect();
   const eqBox = $('#equations');
@@ -1396,7 +1450,7 @@ function answerQuiz(index) {
     fb.textContent = quiz.attempt === 0 ? t('quiz.right') : t('quiz.halfPoint');
   } else {
     const hint = MFE.quiz.diagnose(quiz.form, quiz.options[index], quiz.answer);
-    fb.textContent = `${t('quiz.wrong')} ${MFE.quiz.eqText(quiz.form, quiz.answer)} ${hint}`.trim();
+    setMath(fb, `${t('quiz.wrong')} ${MFE.quiz.eqText(quiz.form, quiz.answer)} ${hint}`.trim());
   }
   $('#quiz-score').textContent = fmt(quiz.score, 1);
   $('#quiz-total').textContent = String(quiz.total);
@@ -1449,7 +1503,7 @@ function checkPractice() {
   const fb = $('#practice-feedback');
   if (!wrong.length) {
     fb.className = 'feedback ok';
-    fb.textContent = `${t('build.done')} ${MFE.quiz.eqText(practice.form, practice.target)}`;
+    setMath(fb, `${t('build.done')} ${MFE.quiz.eqText(practice.form, practice.target)}`);
   } else {
     fb.className = 'feedback err';
     fb.textContent = `${t('build.hitCount', { ok, all: d.params.length })} ${t('build.close')} ${wrong.join(', ')}`;
@@ -1577,7 +1631,7 @@ function raceTimeUp() {
   });
   const fb = $('#race-feedback');
   fb.className = 'feedback err';
-  fb.textContent = `${t('race.timeUp')} ${MFE.quiz.eqText(race.form, race.answer)}`;
+  setMath(fb, `${t('race.timeUp')} ${MFE.quiz.eqText(race.form, race.answer)}`);
   MFE.quiz.noteResult(race.form, false);
   raceAdvance();
 }
@@ -1613,7 +1667,7 @@ function raceAnswer(index) {
     // Auch im Wettkampf wird der Fehler benannt - er kostet keine Zeit mehr,
     // die Aufgabe ist ja vorbei.
     const hint = MFE.quiz.diagnose(race.form, race.options[index], race.answer);
-    fb.textContent = `${t('race.none')} ${MFE.quiz.eqText(race.form, race.answer)} ${hint}`.trim();
+    setMath(fb, `${t('race.none')} ${MFE.quiz.eqText(race.form, race.answer)} ${hint}`.trim());
   }
   $('#race-points').textContent = String(race.points);
   $('#race-streak').textContent = String(race.streak);
@@ -2094,65 +2148,25 @@ function markProFeatures() {
   });
 }
 
-/**
- * Startseite sortieren: was in dieser Ausgabe nutzbar ist, kommt nach oben.
- * In der Lite-Ausgabe sind sieben von neun Klassen gesperrt - ungeordnet
- * scrollt man an lauter Gesperrtem vorbei, bevor etwas Anklickbares kommt.
- * Die Reihenfolge innerhalb der beiden Gruppen bleibt die des HTML, damit
- * die fachliche Ordnung (linear, quadratisch, ganzrational, ...) erhalten
- * bleibt.
- */
-function sortHomeCards() {
-  for (const grid of $$('.fn-grid')) {
-    // Urspruengliche Reihenfolge einmal merken. Nach dem Kauf muss die
-    // Startseite wieder in der fachlichen Ordnung stehen, ohne Trennlinie.
-    if (!grid._order) grid._order = Array.from(grid.children).filter(c => !c.classList.contains('grid-sep'));
-    const cards = grid._order;
-    const open = cards.filter(c => !c.dataset.feature || licence.has(c.dataset.feature));
-    const locked = cards.filter(c => c.dataset.feature && !licence.has(c.dataset.feature));
-    if (!locked.length) {
-      grid.querySelector('.grid-sep')?.remove();
-      grid.append(...cards);
-      continue;
-    }
-    grid.append(...open, ...locked);
-    // Trennlinie vor dem gesperrten Teil - sonst wirkt der Bruch willkuerlich.
-    let sep = grid.querySelector('.grid-sep');
-    if (!sep) {
-      sep = document.createElement('p');
-      sep.className = 'grid-sep';
-      grid.insertBefore(sep, locked[0]);
-    } else {
-      grid.insertBefore(sep, locked[0]);
-    }
-    sep.textContent = t('home.inPro');
-  }
-}
-
-/**
- * Schnellwahl auf der Startseite. Die Karten bleiben der Hauptweg - ein Bild
- * der Kurve erkennt man schneller als einen Listeneintrag, und darum geht es
- * in dieser App. Die Liste ist fuer die, die schon wissen, wohin sie wollen,
- * und fuer alle, denen neun Karten zu viel Scrollen sind.
- */
-function renderHomeSelect() {
-  const sel = $('#home-select');
-  if (!sel) return;
-  sel.replaceChildren();
-
-  const hint = document.createElement('option');
-  hint.value = '';
-  hint.textContent = t('home.quickPickHint');
-  hint.selected = true;
-  sel.append(hint);
-
-  for (const [cat, forms] of Object.entries(CATEGORY_FORMS)) {
-    const allowed = licence.has('cat.' + cat);
-    const o = document.createElement('option');
-    o.value = cat;
-    o.textContent = t('cat.' + cat) + (allowed ? '' : '  \u2013 PRO');
-    sel.append(o);
-  }
+/* --------------------------------------------------------------------------
+   Startseite: "Weitere Funktionen" klappt auf derselben Seite auf.
+   Die Karten stehen in fester, fachlicher Reihenfolge. Fruehere Fassungen
+   haben gesperrte Klassen ans Ende sortiert; bei vier grossen Karten wirkte
+   das willkuerlich. Gesperrtes traegt jetzt nur das Pro-Abzeichen.
+   -------------------------------------------------------------------------- */
+function setMoreOpen(open, { scroll = false } = {}) {
+  const box = $('#more-fns');
+  const btn = $('#btn-more-fns');
+  if (!box || !btn) return;
+  box.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  btn.classList.toggle('is-open', open);
+  if (!open) return;
+  // Die Miniaturen hatten im verborgenen Zustand keine Groesse.
+  requestAnimationFrame(() => {
+    drawThumbs();
+    if (scroll) box.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 /* ==========================================================================
@@ -2193,17 +2207,132 @@ let splitMedia = null;
 const splitFits = () => !!splitMedia?.matches;
 
 function updateSplit() {
-  const chip = $('#chip-split');
-  if (chip) chip.hidden = !splitFits();
-
   const app = $('#screen-app');
-  const on = splitFits() && state.split && currentTab === 'explorer';
+  const on = splitFits() && state.split && currentTab === 'explorer' && !fs.on;
   app.classList.toggle('is-split', on);
   // Die Tabelle wird im geteilten Layout dauerhaft gezeigt, also muss sie
   // auch gerechnet sein - sonst steht dort eine leere Huelse.
   if (on && tableDirty) generateTable();
-  $('#tab-btn-table').setAttribute('aria-disabled', String(on));
+  // Steht die Tabelle daneben, fuehrte der Reiter frueher ausgegraut ins
+  // Leere. Jetzt verschwindet er, solange die Tabelle sichtbar ist.
+  $('#tab-btn-table').hidden = splitFits() && state.split && currentTab === 'explorer';
+  updateTableButton();
   requestAnimationFrame(() => { if (mainGraph.measure()) render(); });
+}
+
+/**
+ * Der farbige Knopf "Wertetabelle" unter dem Graphen.
+ * Mit Platz (Tablet, Rechner, Querformat) blendet er die Tabelle neben dem
+ * Graphen ein und aus. Am Telefon im Hochformat gibt es kein Daneben - dort
+ * oeffnet er den Reiter Wertetabelle.
+ */
+function updateTableButton() {
+  const b = $('#btn-table-toggle');
+  if (!b) return;
+  const fits = splitFits();
+  b.dataset.mode = fits ? 'toggle' : 'tab';
+  if (fits) b.setAttribute('aria-pressed', String(state.split));
+  else b.removeAttribute('aria-pressed');
+  b.classList.toggle('is-on', fits && state.split);
+}
+
+function toggleTable() {
+  if (!splitFits()) { activateTab('table'); return; }
+  state.split = !state.split;
+  saveSettings();
+  updateSplit();
+  drawQuiz(); drawPractice(); drawThumbs();
+}
+
+/* ==========================================================================
+   15c · VOLLBILD
+   Der Graph legt sich ueber den ganzen Bildschirm; Gleichung und Regler
+   bleiben daneben (quer) oder darunter (hoch) und lassen sich wegklappen.
+   Das echte Vollbild des Browsers kommt nur dazu, wo es verlaesslich geht:
+   im Browser am Rechner und unter Android. Am iPhone gibt es fuer normale
+   Seitenelemente keines, in den App-Huellen ist es nicht noetig - dort
+   traegt die Ueberlagerung allein.
+   ========================================================================== */
+const fs = { on: false, native: false, panel: true };
+
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+
+function requestNativeFs() {
+  if (window.cordova) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try {
+    const r = req.call(el);
+    fs.native = true;
+    // Abgelehnt (z. B. ohne Nutzergeste): die Ueberlagerung genuegt.
+    r?.catch?.(() => { fs.native = false; });
+  } catch { fs.native = false; }
+}
+function exitNativeFs() {
+  fs.native = false;
+  if (!fsElement()) return;
+  const ex = document.exitFullscreen || document.webkitExitFullscreen;
+  try { ex?.call(document)?.catch?.(() => {}); } catch {}
+}
+
+/**
+ * Vollbild an oder aus.
+ * via: 'nav'    - Zurueck hat die Ebene schon geschlossen,
+ *      'silent' - ein anderer Weg hat den Bildschirm gewechselt,
+ *      sonst    - Knopf oder Esc: Verlaufseintrag wird mit entfernt.
+ */
+function setFullscreen(on, { via = '' } = {}) {
+  if (on === fs.on) return;
+  if (on && (lastScreen !== 'app' || currentTab !== 'explorer')) return;
+  fs.on = on;
+  const panel = $('#tab-explorer .canvas-panel');
+  panel.classList.toggle('is-fullscreen', on);
+  document.documentElement.classList.toggle('is-fs', on);
+  if (on) {
+    fs.panel = true;
+    MFE.nav.openLayer('fullscreen', () => setFullscreen(false, { via: 'nav' }));
+    requestNativeFs();
+  } else {
+    if (via !== 'nav') MFE.nav.closeLayer('fullscreen', { silent: via === 'silent' });
+    exitNativeFs();
+  }
+  panel.classList.toggle('fs-panel-hidden', on && !fs.panel);
+  paintFullscreenButtons();
+  updateSplit();
+  requestAnimationFrame(() => {
+    measureChrome();
+    if (mainGraph.measure()) render();
+    if (on) $('#graph-canvas').focus?.({ preventScroll: true });
+    else $('#btn-fs-label')?.focus?.({ preventScroll: true });
+  });
+}
+
+function toggleFsPanel() {
+  if (!fs.on) return;
+  fs.panel = !fs.panel;
+  $('#tab-explorer .canvas-panel').classList.toggle('fs-panel-hidden', !fs.panel);
+  paintFullscreenButtons();
+  requestAnimationFrame(() => { if (mainGraph.measure()) render(); });
+}
+
+function paintFullscreenButtons() {
+  const label = t(fs.on ? 'btn.fullscreenExit' : 'btn.fullscreen');
+  const icon = $('#btn-fs');
+  if (icon) {
+    icon.setAttribute('aria-pressed', String(fs.on));
+    icon.title = label;
+    icon.setAttribute('aria-label', label);
+  }
+  const big = $('#btn-fs-label');
+  if (big) big.setAttribute('aria-pressed', String(fs.on));
+  const txt = $('#btn-fs-text');
+  if (txt) txt.textContent = label;
+  const pb = $('#btn-fs-panel');
+  if (pb) {
+    pb.hidden = !fs.on;
+    pb.setAttribute('aria-pressed', String(fs.panel));
+  }
 }
 
 /* ==========================================================================
@@ -2220,8 +2349,7 @@ function applyLanguage() {
   $('#btn-lang-en').setAttribute('aria-pressed', String(MFE.i18n.lang === 'en'));
   updateExplorer();
   renderInfo();
-  sortHomeCards();
-  renderHomeSelect();
+  paintFullscreenButtons();
   MFE.quiz.relabel();
   if (quiz.answer) renderQuizOptions();
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
@@ -2265,6 +2393,7 @@ let currentTab = 'explorer';
  *  Druck auf Zurueck aufgerufen - deshalb darf hier kein pushState stehen. */
 function applyScreen(which) {
   if (!SCREENS.includes(which)) which = 'home';
+  if (fs.on && which !== 'app') setFullscreen(false, { via: 'silent' });
   lastScreen = which;
   // Damit das Stylesheet weiss, wo wir sind - auf der Startseite haben
   // Rueckgaengig und Wiederherstellen nichts zu suchen und nehmen in der
@@ -2276,7 +2405,7 @@ function applyScreen(which) {
   }
   if (which !== 'app') { stopPlay(); stopHAnim(); stopRace({ keepSummary: false }); }
   if (which === 'app') requestAnimationFrame(() => { measureChrome(); mainGraph.measure(); render(); });
-  if (which === 'home') requestAnimationFrame(drawThumbs);
+  if (which === 'home') { renderPracticeCard(); requestAnimationFrame(drawThumbs); }
   if (which === 'info') renderInfo();
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
@@ -2284,6 +2413,7 @@ function applyScreen(which) {
 /** Wechselt den Reiter, ohne den Verlauf anzufassen. */
 function applyTab(name) {
   if (!['explorer', 'table', 'quiz'].includes(name)) name = 'explorer';
+  if (fs.on && name !== 'explorer') setFullscreen(false, { via: 'silent' });
   currentTab = name;
   $$('.tab-btn').forEach(b => {
     const on = b.dataset.tab === name;
@@ -2330,7 +2460,6 @@ function syncOptionInputs() {
   }
   $('#opt-piAxis').checked = state.piAxis;
   $('#opt-snap').checked = state.snap;
-  $('#opt-split').checked = state.split;
   $('#opt-diff').checked = state.table.diff;
   $('#opt-quot').checked = state.table.quot;
   mainGraph.canvas.classList.toggle('is-draggable', state.opts.drag);
@@ -2355,7 +2484,11 @@ function openCategory(cat) {
   const form = forms[0];
   state.curves = [makeCurve(form)];
   state.active = 0;
-  state.opts.intersections = false;
+  // Neue Klasse von der Startseite: Anzeigen wieder auf Anfang. Sonst
+  // stuenden Haekchen aus der letzten Stunde noch da.
+  state.opts = { ...DEFAULT_OPTS };
+  state.frozen = null;
+  stopHAnim();
   state.traceX = null;
   clearTrail({ quiet: true });
   state.piAxis = !!FUNCTIONS[form].piAxis;
@@ -2388,17 +2521,30 @@ function bindEvents() {
   $$('.fn-card[data-category]').forEach(card =>
     card.addEventListener('click', () => openCategory(card.dataset.category)));
 
-  $('#home-select').addEventListener('change', (e) => {
-    const cat = e.target.value;
-    e.target.selectedIndex = 0;          // wieder auf den Hinweis zuruecksetzen
-    if (cat) openCategory(cat);
+  $('#btn-more-fns').addEventListener('click', () => {
+    setMoreOpen($('#more-fns').hidden, { scroll: true });
   });
+  $('#card-practice').addEventListener('click', () => showScreen('app', 'quiz'));
 
-  $('#opt-split').addEventListener('change', (e) => {
-    state.split = e.target.checked;
-    saveSettings();
-    updateSplit();
+  $('#btn-table-toggle').addEventListener('click', toggleTable);
+  $('#btn-fs').addEventListener('click', () => setFullscreen(!fs.on));
+  $('#btn-fs-label').addEventListener('click', () => setFullscreen(!fs.on));
+  $('#btn-fs-panel').addEventListener('click', toggleFsPanel);
+  // Esc beendet die Ueberlagerung. Ein offener Dialog hat Vorrang - Esc
+  // schliesst dann nur ihn, wie gewohnt.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !fs.on) return;
+    if (document.querySelector('dialog[open]')) return;
+    e.preventDefault();
+    setFullscreen(false);
   });
+  // Esc im echten Vollbild meldet der Browser nur als Zustandswechsel.
+  const onNativeFsChange = () => {
+    if (!fsElement() && fs.on && fs.native) { fs.native = false; setFullscreen(false); }
+  };
+  document.addEventListener('fullscreenchange', onNativeFsChange);
+  document.addEventListener('webkitfullscreenchange', onNativeFsChange);
+
 
   $('#card-quizzes').addEventListener('click', () => {
     if (!licence.has('quizBuilder')) { proHint(); return; }
@@ -2425,13 +2571,14 @@ function bindEvents() {
   $('#btn-lang-de').addEventListener('click', () => { MFE.i18n.lang = 'de'; applyLanguage(); saveSettings(); });
   $('#btn-lang-en').addEventListener('click', () => { MFE.i18n.lang = 'en'; applyLanguage(); saveSettings(); });
 
-  const tabs = $$('.tab-btn');
-  tabs.forEach(btn => {
+  $$('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => activateTab(btn.dataset.tab));
     btn.addEventListener('keydown', (e) => {
+      // Der Reiter Wertetabelle kann verborgen sein (Tabelle steht daneben).
+      const tabs = $$('.tab-btn').filter(b => !b.hidden);
       const i = tabs.indexOf(btn);
       const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -1;
-      if (n < 0) return;
+      if (i < 0 || n < -1 || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
       const target = tabs[(n + tabs.length) % tabs.length];
       target.focus(); activateTab(target.dataset.tab); e.preventDefault();
     });
@@ -2731,8 +2878,6 @@ function bindEvents() {
 
   addEventListener('mfe:licence-changed', (e) => {
     markProFeatures();
-    sortHomeCards();
-    renderHomeSelect();
     updateExplorer();
     renderInfo();
     if (e.detail?.owned) {
@@ -2898,14 +3043,17 @@ function init() {
   bindEvents();
   measureChrome();
   markProFeatures();
-  sortHomeCards();
   syncViewInputs();
   syncOptionInputs();
   applyLanguage();          // ruft updateExplorer() und renderInfo() mit auf
   invalidateTable();
   $('#btn-beamer').setAttribute('aria-pressed', String(state.display === 'beamer'));
-  renderHomeSelect();
   updateSplit();
+  // Zuletzt eine der weiteren Klassen offen gehabt? Dann steht sie beim
+  // naechsten Besuch der Startseite schon aufgeklappt da.
+  if (catGroup(FUNCTIONS[curve(0).form].category) === 'more') setMoreOpen(true);
+  // Der einmalige Wechsel auf die neuen Voreinstellungen wird festgehalten.
+  if (settingsMigrated) saveSettings();
   requestAnimationFrame(drawThumbs);
 
   history_.stack = [snapshot()];

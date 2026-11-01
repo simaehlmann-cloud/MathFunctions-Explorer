@@ -20,7 +20,7 @@
 window.MFE = window.MFE || {};
 
 MFE.quiz = (() => {
-const { $, $$, toast, renderSliderGroup } = MFE.ui;
+const { $, $$, toast, renderSliderGroup, setMath } = MFE.ui;
 const { clamp, tolerance, fmt, mfmt, parseLoose, FUNCTIONS, CATEGORY_FORMS } = MFE.math;
 const { Graph, drawScene, findZeros, bindViewControl, normalizeView, zoomFactorOf } = MFE.graph;
 const licence = MFE.licence;
@@ -736,7 +736,7 @@ function optionButton(pos, text) {
   mark.textContent = OPT_SHAPES[pos % OPT_SHAPES.length];
   const label = document.createElement('span');
   label.className = 'opt-text';
-  label.textContent = text;
+  setMath(label, text);
   b.append(mark, label);
   // Der Screenreader liest die Form nicht vor - er bekommt den Buchstaben.
   b.setAttribute('aria-label', `${String.fromCharCode(65 + pos)}: ${text}`);
@@ -955,7 +955,7 @@ function renderEditor() {
     const eq = document.createElement('p');
     eq.className = 'editor-eq';
     eq.id = 'editor-eq';
-    eq.textContent = eqText(d.form, d.values);
+    setMath(eq, eqText(d.form, d.values));
     box.append(eq);
 
     // Regler
@@ -969,7 +969,7 @@ function renderEditor() {
       prefix: 'ed-', play: false,
       symbolOf: host.symbolOf,
       onChange: () => {
-        $('#editor-eq').textContent = eqText(d.form, d.values);
+        setMath($('#editor-eq'), eqText(d.form, d.values));
         drawEditorPreview();
       }
     };
@@ -1290,7 +1290,7 @@ function renderTask() {
   }
 
   if (task.type === 'value') {
-    prompt.textContent = `${eqText(task.form, task.values)} \u2014 ${t('quiz.computeAt', { x: mfmt(task.x0) })}`;
+    setMath(prompt, `${eqText(task.form, task.values)} \u2014 ${t('quiz.computeAt', { x: mfmt(task.x0) })}`);
     body.append(answerField('play-answer', t('quiz.yourAnswer')));
   }
 

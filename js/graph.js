@@ -524,19 +524,37 @@ class Graph {
 
     c.fillStyle = C('--axis');
     c.font = `${Math.round(11 * this.scale)}px system-ui, sans-serif`;
+    /* Zahlen, die nicht ganz ins Bild passen, werden weggelassen statt
+       angeschnitten. Vorher stand am Rand aus "-10" nur noch "10" da - eine
+       falsche Zahl ist schlimmer als keine. Rechts bleibt zusaetzlich Platz
+       fuer den Achsennamen x, oben fuer y. */
+    const fontPx = Math.round(11 * this.scale);
+    const pad = 2;
     c.textAlign = 'center'; c.textBaseline = 'top';
+    const xNameRoom = 14 * this.scale;
     for (let i = 0; i <= nx; i++) {
       const x = (Math.ceil(this.xMin / stepX) + i) * stepX;
       if (x > this.xMax + 1e-9) break;
       if (Math.abs(x) < stepX / 1000) continue;
-      c.fillText(labelX(x), this.x2px(x), clamp(y0 + 4, 4, h - 16 * this.scale));
+      const text = labelX(x);
+      const half = c.measureText(text).width / 2;
+      const px = this.x2px(x);
+      if (px - half < pad || px + half > w - pad - xNameRoom) continue;
+      c.fillText(text, px, clamp(y0 + 4, 4, h - 16 * this.scale));
     }
     c.textAlign = 'right'; c.textBaseline = 'middle';
+    const yNameRoom = 18 * this.scale;
     for (let i = 0; i <= ny; i++) {
       const y = (Math.ceil(this.yMin / stepY) + i) * stepY;
       if (y > this.yMax + 1e-9) break;
       if (Math.abs(y) < stepY / 1000) continue;
-      c.fillText(mfmt(y, digY), clamp(x0 - 6, 26 * this.scale, w - 4), this.y2px(y));
+      const text = mfmt(y, digY);
+      const tw = c.measureText(text).width;
+      const py = this.y2px(y);
+      if (py - fontPx / 2 < pad + yNameRoom || py + fontPx / 2 > h - pad) continue;
+      // Rechtsbuendig an der Achse; liegt die Achse am linken Rand, so weit
+      // nach rechts, dass die ganze Zahl lesbar bleibt.
+      c.fillText(text, clamp(x0 - 6, tw + pad, w - 4), py);
     }
     // Ursprung nur beschriften, wenn er im Bild liegt.
     if (this.xMin < 0 && this.xMax > 0 && this.yMin < 0 && this.yMax > 0) {

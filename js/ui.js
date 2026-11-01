@@ -281,7 +281,40 @@ function saveFile(blob, filename, mime) {
  *  window.print() stillschweigend. */
 const canPrint = () => !window.cordova;
 
+/**
+ * Text mit Hochzahlen anzeigen. Die Gleichungen kommen als Zeichenkette
+ * ("f(x) = 2^x + 1") - als Schluessel und fuer Screenreader bleibt das so.
+ * Auf dem Bildschirm stand aber das Dach-Zeichen da. Hier wird jedes "^"
+ * samt folgendem Ausdruck (bis zum naechsten Leerzeichen) hochgestellt.
+ * Aufgebaut mit Textknoten, nie mit innerHTML: der Text kann aus einem
+ * geteilten Quiz-Link stammen.
+ */
+function setMath(el, text) {
+  if (!el) return;
+  const s = String(text ?? '');
+  if (!s.includes('^')) { el.textContent = s; return; }
+  // Sichtbar: mit Hochzahlen. Vorgelesen: der urspruengliche Text - ein
+  // hochgestelltes x klingt sonst wie "2 x" statt "2 hoch x".
+  const shown = document.createElement('span');
+  shown.setAttribute('aria-hidden', 'true');
+  const re = /\^(\([^)]*\)|[^\s+\u2212\-)]+)/g;
+  let last = 0, m;
+  while ((m = re.exec(s))) {
+    if (m.index > last) shown.append(s.slice(last, m.index));
+    const sup = document.createElement('sup');
+    const exp = m[1];
+    sup.textContent = exp.startsWith('(') && exp.endsWith(')') ? exp.slice(1, -1) : exp;
+    shown.append(sup);
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) shown.append(s.slice(last));
+  const spoken = document.createElement('span');
+  spoken.className = 'sr-only';
+  spoken.textContent = s;
+  el.replaceChildren(shown, spoken);
+}
+
 return { $, $$, debounce, toast, cssId, renderSliderGroup, syncSliderGroup,
-         setValue, widenBounds, commitTyped, setSnap,
+         setValue, widenBounds, commitTyped, setSnap, setMath,
          publicBase, saveFile, canPrint, WEB_URL };
 })();

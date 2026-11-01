@@ -41,7 +41,11 @@ const { window } = dom;
 // Canvas gibt es in jsdom nicht. Der Renderer prueft ohnehin die Groesse und
 // steigt bei 0 x 0 aus - dieser Ersatz sorgt nur dafuer, dass kein Aufruf
 // ins Leere laeuft, falls doch einmal gezeichnet wird.
-const stubCtx = new Proxy({}, { get: () => () => {} });
+// measureText liefert in jedem echten Browser ein Mass - die Achsenbeschriftung
+// rechnet damit, ob eine Zahl noch ganz ins Bild passt.
+const stubCtx = new Proxy({}, {
+  get: (_, k) => (k === 'measureText' ? (s) => ({ width: String(s).length * 6 }) : () => {})
+});
 window.HTMLCanvasElement.prototype.getContext = () => stubCtx;
 // Ohne Layout meldet jsdom ueberall 0. Fuer die Zeigerbedienung braucht der
 // Graph eine Groesse, sonst laesst sich Zoomen gar nicht ausloesen.
@@ -142,6 +146,22 @@ if (LITE) {
   try { window.localStorage.removeItem('mfe:pro'); } catch {}
 }
 
+/* Bestehende Installation aus 7.0 nachstellen: Tabelle daneben an, im
+   Arbeitsstand Hilfslinien und Nullstellen an. 7.1 muss das EINMAL auf die
+   neuen Voreinstellungen setzen, Sprache und Farbschema aber behalten. */
+try {
+  window.localStorage.setItem('mfe:v3', JSON.stringify({
+    lang: 'de', theme: 'light', display: 'normal', snap: true, split: true, symbols: {}
+  }));
+  const lin = { form: 'linear', values: { m: 1, b: 0 }, bounds: {} };
+  window.localStorage.setItem('mfe:session', JSON.stringify({
+    at: Date.now(), curves: [lin], active: 0,
+    view: { xMin: -10, xMax: 10, yMin: -10, yMax: 10 }, piAxis: false,
+    opts: { helpers: true, roots: true, showTerm: true }, table: { diff: false, quot: false },
+    tangentX: 1, secantH: 2, frozen: null, inApp: false, tab: 'explorer'
+  }));
+} catch {}
+
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
                'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
 for (const f of files) {
@@ -167,6 +187,45 @@ const expect = (cond, what) => { checks.push([!!cond, what]); if (!cond) errors.
 /* ---- Ablauf ------------------------------------------------------------ */
 await tick();
 expect($('#screen-home').classList.contains('is-active'), 'Startseite ist sichtbar');
+
+// --- Einmaliger Wechsel auf die Voreinstellungen von 7.1 -------------------
+{
+  await new Promise(r => setTimeout(r, 450));      // saveSettings ist entprellt
+  let saved = null;
+  try { saved = JSON.parse(window.localStorage.getItem('mfe:v3')); } catch {}
+  expect(saved?.rev === 2, `Migration: die Einstellungen tragen jetzt die Fassung 2 (${saved?.rev})`);
+  expect(saved?.split === false, 'Migration: die Tabelle daneben ist aus');
+  expect(saved?.lang === 'de' && saved?.theme === 'light', 'Migration: Sprache und Farbschema bleiben');
+  expect(!$('#opt-helpers').checked, 'Migration: Hilfslinien aus dem alten Arbeitsstand sind aus');
+  expect(!$('#opt-roots').checked, 'Migration: auch die Nullstellen');
+  expect($('#opt-showTerm').checked, 'Migration: die Gleichung mit Zahlen bleibt an');
+}
+
+// --- Startseite: vier Klassen, "Weitere", feste Reihenfolge ---------------
+{
+  const main = Array.from($('.fn-grid-main').children);
+  const order = main.map(c => c.dataset.category || c.id);
+  expect(order.join(',') === 'linear,quadratic,exponential,trig,btn-more-fns',
+         `Startseite: feste Reihenfolge der grossen Karten (${order.join(',')})`);
+  expect(main.every(c => c.dataset.cat), 'jede grosse Karte hat eine Klassenfarbe');
+  expect(!$('#home-select'), 'das Auswahlmenue ist entfernt');
+  expect(!$$('.grid-sep').length, 'keine Trennzeile mehr');
+  expect($('.eyebrow').textContent.includes('7 bis 13'), 'Zielgruppe: Klasse 7 bis 13');
+  const more = $('#more-fns');
+  expect(more.hidden && $('#btn-more-fns').getAttribute('aria-expanded') === 'false',
+         'weitere Klassen sind zu Beginn zugeklappt');
+  expect(window.getComputedStyle(more).display === 'none', 'und wirklich unsichtbar');
+  expect(more.querySelectorAll('.fn-card[data-category]').length === 5, 'darin fuenf weitere Klassen');
+  click('#btn-more-fns'); await tick();
+  expect(!more.hidden && $('#btn-more-fns').getAttribute('aria-expanded') === 'true', 'Klick klappt sie auf');
+  click('#btn-more-fns'); await tick();
+  expect(more.hidden, 'zweiter Klick klappt sie wieder zu');
+  if (LITE) {
+    const locked = main.filter(c => c.classList.contains('is-locked')).map(c => c.dataset.category);
+    expect(locked.join(',') === 'quadratic,trig', `Lite: quadratisch und trigonometrisch tragen das Pro-Abzeichen (${locked})`);
+  }
+  expect($('#card-practice-desc').textContent.includes('Lineare'), 'Uebungskarte nennt die geuebte Klasse');
+}
 expect($('#parameters-container').children.length === 2, 'Zwei Regler fuer die lineare Funktion');
 expect($('#parameters-container').closest('.canvas-panel') !== null,
        'Regler liegen im selben Block wie das Koordinatensystem');
@@ -1109,8 +1168,8 @@ if (LITE) {
   expect(cards.length === 8, `dazu der Quiz-Baukasten, also acht Sperren insgesamt (${cards.length})`);
   expect(cards.every(c => c.classList.contains('is-locked')), 'alle gesperrten Karten tragen die Kennzeichnung');
   expect(cards.every(c => c.getAttribute('aria-disabled') === 'true'), 'und sind als gesperrt ausgezeichnet');
-  expect($$('.fn-card:not([data-feature])').length === 3,
-         'frei bleiben zwei Funktionsklassen und die Info-Karte');
+  expect($$('.fn-card:not([data-feature])').length === 5,
+         'frei bleiben zwei Funktionsklassen, "Weitere", Ueben und die Info-Karte');
 } else {
   expect(!groups.some(g => g.label.includes('PRO')), 'Pro: keine Klasse ist gekennzeichnet');
   // Klassenwechsel direkt aus dem Explorer heraus
@@ -1132,20 +1191,18 @@ expect(window.MFE.nav.depth === d0 + 2, 'ein Reiterwechsel ebenfalls');
 await back(); await back();
 expect(window.MFE.nav.depth === d0, 'zweimal Zurueck bringt die Tiefe wieder auf den Ausgangswert');
 
-// --- Startseite: Freigeschaltetes zuerst ----------------------------------
+// --- Startseite: feste Reihenfolge, auch nach Sprachwechsel ----------------
 click('#btn-home'); await tick();
 {
-  const grid = $$('.fn-grid')[0];
-  const cards = Array.from(grid.children).filter(el => el.classList.contains('fn-card'));
-  const firstLocked = cards.findIndex(c => c.classList.contains('is-locked'));
-  const lastOpen = cards.map(c => c.classList.contains('is-locked')).lastIndexOf(false);
+  click('#btn-lang-en'); await tick();
+  click('#btn-lang-de'); await tick();
+  const cats = Array.from($('.fn-grid-main').children).map(c => c.dataset.category || c.id);
+  expect(cats.join(',') === 'linear,quadratic,exponential,trig,btn-more-fns',
+         'die Reihenfolge bleibt fachlich, gesperrte Karten werden nicht umsortiert');
+  const cards = $$('.fn-card[data-category]');
   if (LITE) {
-    expect(firstLocked > lastOpen, 'Lite: gesperrte Karten stehen hinter den freien');
-    expect(grid.querySelector('.grid-sep'), 'Lite: eine Trennzeile kuendigt den Pro-Teil an');
-    expect(cards.slice(0, 2).every(c => !c.classList.contains('is-locked')),
-           'Lite: die ersten beiden Karten sind nutzbar');
+    expect(cards.filter(c => c.classList.contains('is-locked')).length === 7, 'Lite: sieben Karten mit Pro-Abzeichen');
   } else {
-    expect(!grid.querySelector('.grid-sep'), 'Pro: keine Trennzeile noetig');
     expect(cards.every(c => !c.classList.contains('is-locked')), 'Pro: nichts ist gesperrt');
   }
 }
@@ -1189,52 +1246,165 @@ click('[data-back="home"]'); await tick();
   window.cordova = prevCordova;
 }
 
-// --- Schnellwahl auf der Startseite ---------------------------------------
+// --- Weitere Klassen und Uebungskarte ------------------------------------
 click('#btn-home'); await tick();
 {
-  const sel = $('#home-select');
-  expect(sel, 'Schnellwahl vorhanden');
-  expect(sel.options.length === 10, `ein Hinweis plus neun Klassen (${sel.options.length})`);
-  expect(sel.options[0].value === '', 'der erste Eintrag ist nur ein Hinweis');
+  click('#btn-more-fns'); await tick();
+  click('.fn-card[data-category="absolute"]'); await tick();
   if (LITE) {
-    expect(Array.from(sel.options).filter(o => o.textContent.includes('PRO')).length === 7,
-           'Lite: sieben Klassen sind in der Liste als PRO gekennzeichnet');
+    expect($('#pro-dialog').open, 'Lite: weitere Klasse zeigt den Pro-Hinweis');
+    $('#pro-dialog').close('cancel'); await tick(); await tick();
+  } else {
+    expect($('#screen-app').classList.contains('is-active'), 'eine weitere Klasse oeffnet den Explorer');
+    expect($('#screen-app').dataset.cat === 'more', 'und traegt die Farbe der weiteren Klassen');
+    expect($('#cat-badge').textContent === 'Betragsfunktionen', 'das Abzeichen nennt die Klasse');
+    click('#btn-home'); await tick();
   }
-  sel.value = 'linear';
-  sel.dispatchEvent(new window.Event('change', { bubbles: true }));
-  await tick();
-  expect($('#screen-app').classList.contains('is-active'), 'die Schnellwahl oeffnet den Explorer');
-  expect(sel.selectedIndex === 0, 'und stellt sich danach wieder auf den Hinweis');
+  click('.fn-card[data-category="exponential"]'); await tick();
+  expect($('#screen-app').dataset.cat === 'exponential', 'Exponentialfunktion: eigene Klassenfarbe');
+  {
+    const ev = $('.equation-value');
+    expect(ev.querySelector('sup')?.textContent === 'x', 'Gleichung mit Zahlen: x steht hochgestellt, kein Dach-Zeichen');
+    expect(!ev.querySelector('[aria-hidden="true"]').textContent.includes('^'), 'sichtbar steht kein "^"');
+    expect(ev.querySelector('.sr-only').textContent.includes('^x'), 'vorgelesen wird weiter "hoch x"');
+  }
+  click('#btn-home'); await tick();
+  expect($('#card-practice-desc').textContent.includes('Exponential'), 'die Uebungskarte folgt der Klasse');
+  click('#card-practice'); await tick();
+  expect($('#screen-app').classList.contains('is-active') && $('#tab-quiz').classList.contains('is-active'),
+         'die Uebungskarte oeffnet den Uebungsteil');
+  click('#btn-home'); await tick();
+  click('.fn-card[data-category="linear"]'); await tick();
 }
 
-// --- Wertetabelle neben dem Graphen ---------------------------------------
+// --- Wertetabelle: farbiger Knopf unter dem Graphen ----------------------
 {
   const app = $('#screen-app');
+  const btn = $('#btn-table-toggle');
   expect(!app.classList.contains('is-split'), 'schmal: kein geteiltes Layout');
-  expect($('#chip-split').hidden, 'schmal: der Schalter bleibt verborgen');
+  expect(btn && btn.dataset.mode === 'tab', 'schmal: der Knopf fuehrt zum Reiter');
+  expect(!btn.hasAttribute('aria-pressed'), 'schmal: kein Umschalter, also kein aria-pressed');
+  click(btn); await tick();
+  expect($('#tab-table').classList.contains('is-active'), 'schmal: Klick oeffnet den Reiter Wertetabelle');
+  click('#tab-btn-explorer'); await tick();
 
   setWide(true); await tick();
-  expect(!$('#chip-split').hidden, 'breit: der Schalter erscheint');
-  expect(app.classList.contains('is-split'), 'breit: Graph und Tabelle stehen nebeneinander');
-  expect($('#values-table tbody').children.length > 0, 'und die Tabelle ist gefuellt');
+  expect(!app.classList.contains('is-split'), 'breit: zu Beginn steht die Tabelle NICHT daneben');
+  expect(btn.dataset.mode === 'toggle' && btn.getAttribute('aria-pressed') === 'false', 'breit: der Knopf ist ein Umschalter, aus');
+  expect(!$('#tab-btn-table').hidden, 'breit, Tabelle aus: der Reiter bleibt');
 
-  // Abschalten muss wirken und erhalten bleiben
-  const box = $('#opt-split');
-  box.checked = false;
-  box.dispatchEvent(new window.Event('change', { bubbles: true }));
-  await tick();
-  expect(!app.classList.contains('is-split'), 'abgeschaltet: wieder einspaltig');
-  box.checked = true;
-  box.dispatchEvent(new window.Event('change', { bubbles: true }));
-  await tick();
+  click(btn); await tick();
+  expect(app.classList.contains('is-split'), 'Knopf: Graph und Tabelle stehen nebeneinander');
+  expect(btn.getAttribute('aria-pressed') === 'true' && btn.classList.contains('is-on'), 'und der Knopf zeigt "an"');
+  expect($('#values-table tbody').children.length > 0, 'und die Tabelle ist gefuellt');
+  expect($('#tab-btn-table').hidden, 'der doppelte Reiter verschwindet, solange die Tabelle daneben steht');
 
   // Im Uebungsreiter ergibt die Tabelle daneben keinen Sinn
   click('#tab-btn-quiz'); await tick();
   expect(!app.classList.contains('is-split'), 'im Uebungsteil kein geteiltes Layout');
+  expect(!$('#tab-btn-table').hidden, 'und der Reiter Wertetabelle ist wieder da');
   click('#tab-btn-explorer'); await tick();
   expect(app.classList.contains('is-split'), 'zurueck im Explorer wieder geteilt');
+
+  // Gemerkt wird es
+  await new Promise(r => setTimeout(r, 450));
+  expect(JSON.parse(window.localStorage.getItem('mfe:v3')).split === true, 'die Wahl wird gespeichert');
+
+  click(btn); await tick();
+  expect(!app.classList.contains('is-split'), 'zweiter Klick: wieder einspaltig');
+  click(btn); await tick();
   setWide(false); await tick();
   expect(!app.classList.contains('is-split'), 'wird der Bildschirm schmal, klappt es zusammen');
+  expect(!$('#tab-btn-table').hidden, 'und der Reiter ist wieder erreichbar');
+  click(btn); await tick();                 // zurueck auf aus fuer die folgenden Pruefungen
+  click('#tab-btn-explorer'); await tick();
+}
+
+// --- Vollbild --------------------------------------------------------------
+{
+  const panel = $('#tab-explorer .canvas-panel');
+  const d0 = window.MFE.nav.depth;
+  click('#btn-fs-label'); await tick();
+  expect(panel.classList.contains('is-fullscreen'), 'Vollbild: der Graph legt sich ueber alles');
+  expect(window.document.documentElement.classList.contains('is-fs'), 'und die Seite scrollt nicht mehr');
+  expect(window.MFE.nav.depth === d0 + 1, 'Vollbild hat einen eigenen Verlaufseintrag');
+  expect($('#btn-fs-text').textContent === 'Vollbild beenden', 'der Knopf heisst jetzt "Vollbild beenden"');
+  expect($('#btn-fs').getAttribute('aria-pressed') === 'true', 'auch das Symbol am Graphen zeigt "an"');
+  expect(!$('#btn-fs-panel').hidden, 'im Vollbild gibt es den Knopf fuer Gleichung und Regler');
+
+  click('#btn-fs-panel'); await tick();
+  expect(panel.classList.contains('fs-panel-hidden'), 'Regler lassen sich wegklappen');
+  expect(window.getComputedStyle($('#tab-explorer .live-panel')).display === 'none', 'und sind dann weg');
+  click('#btn-fs-panel'); await tick();
+  expect(!panel.classList.contains('fs-panel-hidden'), 'und wieder einblenden');
+
+  // Zurueck schliesst das Vollbild, nicht den Explorer
+  await back();
+  expect(!panel.classList.contains('is-fullscreen'), 'Zurueck beendet das Vollbild');
+  expect($('#screen-app').classList.contains('is-active'), 'und bleibt im Explorer');
+  expect(window.MFE.nav.depth === d0, 'ohne einen Eintrag zu verschlucken');
+
+  // Esc
+  click('#btn-fs'); await tick();
+  window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await tick(); await tick();
+  expect(!panel.classList.contains('is-fullscreen'), 'Esc beendet das Vollbild');
+  expect(window.MFE.nav.depth === d0, 'Esc nimmt den Verlaufseintrag mit heraus');
+
+  // Ein Dialog ueber dem Vollbild: Zurueck schliesst zuerst den Dialog
+  click('#btn-fs'); await tick();
+  click('#equations [data-param]'); await tick();
+  expect($('#param-dialog').open, 'im Vollbild laesst sich der Parameter-Dialog oeffnen');
+  await back();
+  expect(!$('#param-dialog').open && panel.classList.contains('is-fullscreen'),
+         'Zurueck schliesst erst den Dialog, das Vollbild bleibt');
+  // Dialog ueber seinen eigenen Knopf schliessen: wie im Browser feuert dabei
+  // "close", und nav.js nimmt den Dialog-Eintrag per history.back() heraus.
+  // Das darf das Vollbild darunter NICHT mitreissen.
+  click('#equations [data-param]'); await tick();
+  expect($('#param-dialog').open, 'Dialog im Vollbild ein zweites Mal geoeffnet');
+  $('#param-dialog').close('cancel');
+  $('#param-dialog').dispatchEvent(new window.Event('close'));
+  await tick(); await tick();
+  expect(panel.classList.contains('is-fullscreen'), 'Dialog per Knopf geschlossen: das Vollbild bleibt');
+  expect(window.MFE.nav.layers.join() === 'fullscreen', 'und seine Ebene ebenso');
+
+  click('#btn-fs'); await tick(); await tick();
+  expect(!panel.classList.contains('is-fullscreen'), 'Symbol am Graphen beendet das Vollbild');
+  expect(window.MFE.nav.depth === d0, 'Verlaufstiefe stimmt nach allem wieder');
+
+  // Bildschirmwechsel waehrend des Vollbilds darf nichts haengen lassen
+  click('#btn-fs'); await tick();
+  click('#btn-home'); await tick();
+  expect(!panel.classList.contains('is-fullscreen') && !window.document.documentElement.classList.contains('is-fs'),
+         'beim Verlassen des Explorers endet das Vollbild');
+  expect(!window.MFE.nav.layers.length, 'und keine Ebene bleibt offen');
+  click('.fn-card[data-category="linear"]'); await tick();
+}
+
+// --- Voreinstellungen beim Oeffnen einer Klasse ----------------------------
+{
+  for (const id of ['#opt-helpers', '#opt-roots', '#opt-trace']) {
+    const el = $(id);
+    el.checked = true;
+    el.dispatchEvent(new window.Event('change', { bubbles: true }));
+  }
+  $('#opt-showTerm').checked = false;
+  $('#opt-showTerm').dispatchEvent(new window.Event('change', { bubbles: true }));
+  await tick();
+  click('#btn-home'); await tick();
+  click('.fn-card[data-category="exponential"]'); await tick();
+  const on = Object.keys({ helpers: 1, roots: 1, yint: 1, vertex: 1, drag: 1, intersections: 1,
+    derivative: 1, tangent: 1, trace: 1, secant: 1, trail: 1, locus: 1 }).filter(k => $('#opt-' + k).checked);
+  expect(!on.length, `neue Klasse von der Startseite: alle Anzeigen aus (${on.join(',') || 'keine an'})`);
+  expect($('#opt-showTerm').checked, 'ausser der Gleichung mit Zahlen');
+  expect(!$('.equation-value').hidden, 'die Gleichung mit Zahlen ist sichtbar');
+  // Leere Gruppen bleiben nicht als Ueberschrift stehen
+  const groups = $$('.chip-group');
+  expect(groups.length === 4, `vier Schaltergruppen (${groups.length})`);
+  expect(groups.every(g => g.hidden || g.querySelector('.chip:not([hidden])')), 'keine sichtbare Gruppe ist leer');
+  click('#btn-home'); await tick();
+  click('.fn-card[data-category="linear"]'); await tick();
 }
 
 // --- Kopfzeile auf der Startseite ------------------------------------------
@@ -1252,7 +1422,7 @@ expect(window.document.documentElement.dataset.screen === 'app', 'und wechselt m
 // Darstellung, nicht nur die Eigenschaft .hidden.
 {
   const shown = (el) => window.getComputedStyle(el).display !== 'none';
-  const mustHide = ['#update-bar', '#chip-split', '#info-lite-box', '#backup-file',
+  const mustHide = ['#update-bar', '#btn-fs-panel', '#more-fns', '#info-lite-box', '#backup-file',
                     '#btn-play-next', '#btn-play-again', '#btn-play-wrong'];
   for (const sel of mustHide) {
     const el = $(sel);
@@ -1326,8 +1496,8 @@ if (LITE) {
   expect($('#info-lite-box').hidden, 'nach dem Kauf verschwinden Kaufen/Wiederherstellen');
   click('#btn-home'); await tick();
   expect(!$$('.fn-card.is-locked').length, `nach dem Kauf ist keine Karte mehr gesperrt (${$$('.fn-card.is-locked').length})`);
-  expect(!$$('.grid-sep').length, 'und die Trennzeile ist weg');
-  expect(!Array.from($('#home-select').options).some(o => o.textContent.includes('PRO')), 'Schnellwahl ohne PRO-Kennzeichnung');
+  expect(Array.from($('.fn-grid-main').children).map(c => c.dataset.category || c.id).join(',')
+         === 'linear,quadratic,exponential,trig,btn-more-fns', 'nach dem Kauf unveraenderte Reihenfolge');
   click('.fn-card[data-category="quadratic"]'); await tick();
   expect($('#screen-app').classList.contains('is-active') && !$('#pro-dialog').open, 'quadratische Funktion jetzt erreichbar');
 

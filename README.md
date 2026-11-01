@@ -1,6 +1,6 @@
 # MathFunctions Explorer v7
 
-Interaktiver Funktionenplotter für den Mathematikunterricht ab Klasse 7.
+Interaktiver Funktionenplotter für den Mathematikunterricht, Klasse 7 bis 13.
 Läuft vollständig im Browser oder als App für iPhone, iPad und Android —
 ohne Server, ohne Konto, ohne einen einzigen Netzwerkzugriff im laufenden
 Betrieb (außer dem freiwilligen In-App-Kauf über Apple).
@@ -15,6 +15,49 @@ python3 -m http.server 8000     # oder: npm run serve
 
 Dann `http://localhost:8000` öffnen. Ein Doppelklick auf `index.html`
 funktioniert auch (`file://`), nur ohne Service Worker.
+
+---
+
+## 7.1.0 – Farbe, Graph im Mittelpunkt, Vollbild
+
+**Startseite.** Vier große Karten für die Klassen der Mittelstufe (linear,
+quadratisch, exponentiell, trigonometrisch), jede in eigener Farbe, dazu die
+Karte „Weitere Funktionen“. Sie klappt auf derselben Seite Ganzrational,
+Logarithmus, Wurzel, Betrag und Gebrochenrational auf. Die Reihenfolge ist
+fest; gesperrte Klassen tragen in der iOS-App ohne Kauf nur das
+Pro-Abzeichen und rutschen nicht mehr ans Ende. Das Auswahlmenü ist entfallen.
+Neu ist die Karte „Üben“. Zielgruppe jetzt „Klasse 7 bis 13“.
+
+**Klassenfarben.** Sie färben nur den Rahmen: Karten, Reiterleiste,
+Abzeichen, Überschriften, Knöpfe (`--c-*`, `--ink-*` in `style.css`). Kurve und
+Parameter behalten ihre festen, auf Farbfehlsichtigkeit geprüften Farben.
+
+**Voreinstellungen.** Zu Beginn ist alles aus außer „Gleichung mit Zahlen“
+(vorher „Term mit Zahlen zeigen“), auch die Wertetabelle daneben und die
+Hilfslinien. Eine Klasse, die auf der Startseite gewählt wird, beginnt immer
+mit diesen Voreinstellungen; wer die App nur kurz verlässt, behält seinen
+Stand. Bestehende Installationen werden einmalig umgestellt (`SETTINGS_REV`
+in `app.js`); Sprache, Farbschema, Beamer-Modus und eigene Buchstaben bleiben.
+
+**Wertetabelle.** Ein farbiger, beschrifteter Knopf unter dem Graphen. Mit
+Platz (ab 860 px, quer ab 700 px) blendet er die Tabelle daneben ein und aus,
+am Telefon im Hochformat öffnet er den Reiter. Steht die Tabelle daneben,
+rücken die Einstellungen unter den Graphen und der doppelte Reiter verschwindet.
+
+**Vollbild.** Knopf „Vollbild“ unter dem Graphen und als Symbol am Graphen.
+Der Graph legt sich über den ganzen Bildschirm, Gleichung und Regler daneben
+(quer) oder darunter (hoch), wegklappbar. Beenden mit Knopf, Esc oder Zurück
+(`MFE.nav.openLayer`). Im Browser kommt das echte Vollbild dazu; in den
+App-Hüllen und am iPhone trägt die Überlagerung allein. Das frühere Symbol ⤢
+für „Ausschnitt anpassen“ sah wie Vollbild aus und ist jetzt eine Lupe.
+
+**Berichtigt.** Karten für Exponential- und Logarithmusfunktionen liefen am
+Telefon über den Rand. Hochzahlen erscheinen in Gleichung, Antwortkacheln und
+Rückmeldungen hochgestellt statt als „^“ (`MFE.ui.setMath`, Screenreader
+lesen weiter „2^x“). Achsenzahlen am Rand werden weggelassen statt
+angeschnitten (aus „−10“ wurde „10“). Die Leiste der Übungsmodi machte die
+Seite am Telefon 511 px breit. Die Schalter stehen in vier Gruppen;
+„Ableitung (Oberstufe)“ zuletzt. Am Tablet steht der Graph links.
 
 ---
 
@@ -139,14 +182,14 @@ Dazu `min-width: 0` und `max-width: 100%` auf allen Behältern.
 Miniaturgraphen skalieren mit (`clamp(58px, 17vw, 96px)`). Statt neunmal
 scrollen sieht man jetzt vier bis sechs Klassen auf einen Blick.
 
-**Schnellwahl auf der Startseite.** Über den Karten steht eine Liste mit allen
-neun Klassen. Die Karten bleiben der Hauptweg — dazu unten mehr.
+**Schnellwahl auf der Startseite.** Über den Karten stand eine Liste mit allen
+neun Klassen (in 7.1 entfallen).
 
 **Wertetabelle neben dem Graphen.** Ab 860 px Breite oder im Querformat ab
 700 px stehen Graph und Tabelle nebeneinander; die Tabelle klebt beim Scrollen
 und rollt eigenständig. Am Telefon im Hochformat bleibt es bei den Reitern —
-dort wäre eine zweite Spalte unlesbar schmal. Abschaltbar über
-*Im Graphen anzeigen → Wertetabelle daneben*, die Einstellung wird gemerkt.
+dort wäre eine zweite Spalte unlesbar schmal. Seit 7.1 über den Knopf
+*Wertetabelle* unter dem Graphen, zu Beginn aus.
 
 ---
 

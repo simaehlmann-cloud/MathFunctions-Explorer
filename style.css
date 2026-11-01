@@ -227,9 +227,11 @@ body {
   border: 1px solid var(--border); border-radius: var(--radius);
 }
 
+/* Ab 900px: Graph gross links, Einstellungen rechts. Vorher standen die
+   Einstellungen links und der Graph wurde - mit Tabelle daneben - auf eine
+   schmale Mittelspalte gequetscht. */
 @media (min-width: 900px) {
-  #tab-explorer.is-active { display: grid; grid-template-columns: 360px minmax(0, 1fr); align-items: start; }
-  .controls-panel { order: -1; position: sticky; top: 5rem; }
+  #tab-explorer.is-active { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); align-items: start; }
 }
 
 /* ---------- Formularelemente ---------- */
@@ -778,17 +780,6 @@ th.col-extra { font-family: var(--ff-ui); font-style: normal; }
   @page { margin: 1.6cm; }
 }
 
-/* --- Trennzeile vor den gesperrten Karten der Startseite ------------------ */
-.grid-sep {
-  grid-column: 1 / -1;
-  margin: .9rem 0 -.2rem;
-  padding-top: .9rem;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: .82rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .07em;
-}
-
 /* ==========================================================================
    Ergaenzungen v6.5 - Platz auf kleinen Bildschirmen
    Befund: die Kopfzeile war breiter als ein Telefon. Vier Symbolknoepfe, zwei
@@ -826,9 +817,6 @@ th.col-extra { font-family: var(--ff-ui); font-style: normal; }
 img, canvas, svg, table, pre { max-width: 100%; }
 
 /* --- Startseite: kompakter, damit weniger gescrollt werden muss --- */
-.quick-pick { display: grid; gap: .3rem; margin: 0 0 1.25rem; }
-.quick-pick label { font-size: .82rem; font-weight: 650; color: var(--muted); }
-.quick-pick select { width: 100%; }
 
 .fn-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr)); }
 canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
@@ -869,9 +857,6 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 /* In der schmalen Spalte reichen zwei Felder nebeneinander. */
 #screen-app.is-split #tab-table .table-controls { grid-template-columns: 1fr 1fr; }
 #screen-app.is-split #tab-table .hint { font-size: .78rem; }
-/* Der Reiter "Wertetabelle" fuehrt dann ins Leere - er bleibt sichtbar,
-   wird aber als bereits geoeffnet ausgewiesen. */
-#screen-app.is-split .tab-btn[aria-disabled="true"] { opacity: .5; }
 
 /* ==========================================================================
    Ergaenzungen v6.6
@@ -951,6 +936,276 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
   padding: .6rem; background: var(--surface-2); border-radius: var(--radius-sm);
 }
 #race-start-box { display: grid; gap: .75rem; justify-items: start; }
+
+/* ==========================================================================
+   Ergaenzungen v7.1 - Farbe, Startseite, Tabellen-Knopf, Vollbild
+   --------------------------------------------------------------------------
+   Jede Funktionsklasse hat eine eigene Farbe. Sie faerbt nur den RAHMEN:
+   Karten, Reiterleiste, Ueberschriften, Knoepfe. Kurve (Violett) und
+   Parameter (Blau, Magenta, Teal, Oliv) behalten ihre festen, auf
+   Farbfehlsichtigkeit geprueften Farben - die Klassenfarbe darf ihnen nie
+   in die Quere kommen.
+   --ink-* ist die dunklere Schriftfarbe zur jeweiligen Klasse (mindestens
+   4,5:1 auf hellem Grund).
+   ========================================================================== */
+:root {
+  --c-linear: #2563eb;      --ink-linear: #1d4ed8;
+  --c-quadratic: #16a34a;   --ink-quadratic: #15803d;
+  --c-exponential: #ea580c; --ink-exponential: #c2410c;
+  --c-trig: #0891b2;        --ink-trig: #0e7490;
+  --c-more: #db2777;        --ink-more: #be185d;
+  --on-ink: #ffffff;
+}
+:root[data-theme="dark"] {
+  --c-linear: #60a5fa;      --ink-linear: #93c5fd;
+  --c-quadratic: #4ade80;   --ink-quadratic: #86efac;
+  --c-exponential: #fb923c; --ink-exponential: #fdba74;
+  --c-trig: #22d3ee;        --ink-trig: #67e8f9;
+  --c-more: #f472b6;        --ink-more: #f9a8d4;
+  --on-ink: #0b1220;
+}
+[data-cat="linear"]      { --cat: var(--c-linear);      --cat-ink: var(--ink-linear); }
+[data-cat="quadratic"]   { --cat: var(--c-quadratic);   --cat-ink: var(--ink-quadratic); }
+[data-cat="exponential"] { --cat: var(--c-exponential); --cat-ink: var(--ink-exponential); }
+[data-cat="trig"]        { --cat: var(--c-trig);        --cat-ink: var(--ink-trig); }
+[data-cat="more"]        { --cat: var(--c-more);        --cat-ink: var(--ink-more); }
+[data-cat] {
+  --cat-tint: color-mix(in srgb, var(--cat) 9%, var(--surface));
+  --cat-soft: color-mix(in srgb, var(--cat) 16%, var(--surface));
+  --cat-line: color-mix(in srgb, var(--cat) 38%, var(--border));
+}
+
+/* --- Startseite ----------------------------------------------------------- */
+#screen-home.is-active {
+  min-height: calc(100dvh - var(--header-h));
+  background:
+    radial-gradient(900px 360px at 0% -8%, color-mix(in srgb, var(--c-linear) 13%, transparent), transparent 70%),
+    radial-gradient(760px 320px at 100% 0%, color-mix(in srgb, var(--c-exponential) 11%, transparent), transparent 70%),
+    radial-gradient(700px 300px at 50% 105%, color-mix(in srgb, var(--c-quadratic) 9%, transparent), transparent 70%);
+}
+.eyebrow {
+  display: inline-block; padding: .28rem .7rem; border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+/* Lange Woerter wie "Exponentialfunktionen" sprengten am Telefon die
+   Karte: Grid-Elemente sind so breit wie ihr laengstes Wort. min-width: 0
+   erlaubt das Schrumpfen, die Silbentrennung den Umbruch. */
+.fn-card { min-width: 0; }
+.fn-name { max-width: 100%; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: break-word; }
+.fn-form sup { font-size: .72em; line-height: 0; }
+.fn-form .sqrt-sign { font-family: var(--ff-ui); font-style: normal; margin-left: .05em; }
+.fn-form .radicand { border-top: 1px solid currentColor; padding: 0 .12em; }
+
+.cat-card {
+  background: var(--cat-tint);
+  border-color: var(--cat-line);
+  border-top: 5px solid var(--cat);
+}
+.cat-card .fn-name { color: var(--cat-ink); }
+.cat-card:hover {
+  border-color: var(--cat);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--cat) 22%, transparent);
+}
+.cat-card canvas.fn-thumb { background: var(--surface); border: 1px solid var(--cat-line); }
+/* Gesperrt: Farbe bleibt erkennbar, das Abzeichen sagt den Rest. */
+.fn-card.is-locked { opacity: .72; }
+
+/* Vier Karten plus "Weitere": am Telefon 2 x 2 und die fuenfte quer
+   darunter, am Tablet 4 + 1, ab 900px alle fuenf in einer Reihe. */
+.more-card {
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; column-gap: .9rem;
+}
+.more-card .more-mark {
+  grid-row: span 2;
+  display: grid; place-items: center;
+  width: 3rem; height: 3rem; border-radius: 50%;
+  background: var(--cat-ink); color: var(--on-ink);
+  font: 700 1.7rem/1 var(--ff-ui);
+}
+.more-card .fn-desc { grid-column: 2; }
+.more-plus { display: block; transition: transform .2s ease; }
+.more-card.is-open .more-plus { transform: rotate(45deg); }
+@media (min-width: 900px) {
+  .fn-grid-main { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .more-card { grid-column: auto; grid-template-columns: minmax(0, 1fr); align-content: start; }
+  .more-card .more-mark {
+    grid-row: auto; justify-self: stretch; width: auto;
+    height: clamp(58px, 17vw, 96px); border-radius: var(--radius-sm);
+    font-size: 2.2rem;
+  }
+  .more-card .fn-desc { grid-column: auto; }
+}
+
+.more-fns {
+  margin-top: 1rem; padding: .25rem 1rem 1rem;
+  border: 1px dashed color-mix(in srgb, var(--c-more) 40%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--c-more) 5%, transparent);
+  animation: more-in .2s ease;
+}
+.more-fns .home-sub { margin-top: .9rem; color: var(--ink-more); }
+/* Zwei Spalten auch am Telefon - einspaltig wurde die Seite sehr lang. */
+.fn-grid-more { grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
+@keyframes more-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* Werkzeugkarten: farbiges Symbol, ruhige Flaeche. */
+.tool-card[data-tool="practice"] { --tool: var(--c-quadratic); }
+.tool-card[data-tool="quizzes"]  { --tool: var(--c-exponential); }
+.tool-card[data-tool="info"]     { --tool: var(--c-linear); }
+.tool-card .tool-mark {
+  color: var(--tool, var(--accent));
+  background: color-mix(in srgb, var(--tool, var(--accent)) 15%, var(--surface));
+}
+.tool-card:hover { border-color: var(--tool, var(--accent)); }
+
+/* --- Funktionsseite ------------------------------------------------------- */
+#screen-app.is-active {
+  min-height: calc(100dvh - var(--header-h));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cat, var(--accent)) 9%, var(--bg)) 0, var(--bg) 340px);
+}
+#screen-app .tabs {
+  align-items: center;
+  background: color-mix(in srgb, var(--cat, var(--accent)) 7%, var(--surface));
+  border-bottom: 2px solid var(--cat-line, var(--border));
+}
+#screen-app .tab-btn.is-active { color: var(--cat-ink, var(--accent)); border-bottom-color: var(--cat, var(--accent)); }
+.cat-badge {
+  margin-left: auto; flex: 0 0 auto;
+  padding: .22rem .75rem; border-radius: 999px;
+  background: var(--cat-ink, var(--accent)); color: var(--on-ink);
+  font-size: .8rem; font-weight: 700; white-space: nowrap;
+}
+.cat-badge:empty { display: none; }
+@media (max-width: 560px) { .cat-badge { display: none; } }
+
+#tab-explorer .controls-panel { border-top: 4px solid var(--cat, var(--accent)); }
+#tab-explorer .panel-section > summary { color: var(--cat-ink, var(--text)); }
+#tab-explorer .live-panel {
+  padding: .75rem;
+  background: var(--cat-tint, var(--surface));
+  border: 1px solid var(--cat-line, var(--border));
+  border-radius: var(--radius);
+}
+#screen-app .chip:has(:checked) {
+  border-color: var(--cat, var(--accent)); color: var(--cat-ink, var(--accent));
+  background: color-mix(in srgb, var(--cat, var(--accent)) 10%, var(--surface));
+}
+#screen-app .chip input { accent-color: var(--cat-ink, var(--accent)); }
+#tab-table .table-wrapper { border-top: 3px solid var(--cat, var(--accent)); border-radius: var(--radius-sm); }
+
+/* Uebungsmodi am Telefon: vier Knoepfe nebeneinander waren 511px breit -
+   die ganze Seite liess sich seitlich verschieben. Jetzt 2 x 2. */
+@media (max-width: 520px) {
+  .segmented { display: grid; grid-template-columns: 1fr 1fr; width: 100%; border-radius: var(--radius); }
+  .seg-btn { border-radius: var(--radius-sm); padding: 0 .5rem; }
+}
+
+/* Hochzahlen in Gleichungen (siehe setMath in ui.js) */
+.equation-value sup, .opt-text sup, .feedback sup, .editor-eq sup, .play-prompt sup {
+  font-size: .72em; line-height: 0;
+}
+
+/* Schaltergruppen */
+.chip-group { margin-top: .35rem; }
+.chip-group .chip { margin-bottom: 0; }
+.chip-group-title {
+  display: flex; align-items: center; gap: .45rem;
+  margin: .55rem 0 .4rem;
+  font-size: .74rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted);
+}
+.chip-group-title::before {
+  content: ""; width: .55rem; height: .55rem; border-radius: 50%;
+  background: var(--cat, var(--accent));
+}
+
+/* --- Wertetabelle und Vollbild: beschriftete Knoepfe unter dem Graphen --- */
+.graph-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.btn-table, .btn-fs {
+  display: inline-flex; align-items: center; gap: .45rem;
+  min-height: var(--tap); padding: 0 1rem;
+  font: inherit; font-weight: 700; font-size: .92rem;
+  border-radius: 999px; cursor: pointer;
+}
+.ico { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ico circle[r="1.8"] { fill: var(--surface); }
+/* Die Wertetabelle ist eine eigene Darstellungsart - ihr Knopf ist der
+   auffaelligste. Aus: Klassenfarbe als Rahmen. An: gefuellt. */
+.btn-table {
+  color: var(--cat-ink, var(--accent));
+  background: var(--surface);
+  border: 2px solid var(--cat, var(--accent));
+}
+.btn-table:hover { background: var(--cat-soft, var(--surface-2)); }
+.btn-table.is-on { color: var(--on-ink); background: var(--cat-ink, var(--accent)); border-color: var(--cat-ink, var(--accent)); }
+.btn-fs {
+  color: var(--text); background: var(--surface);
+  border: 1px solid var(--border);
+}
+.btn-fs:hover { border-color: var(--cat, var(--accent)); color: var(--cat-ink, var(--accent)); }
+
+.map-btn .ico { display: block; }
+#btn-fs .ico-fs-off, #btn-fs[aria-pressed="true"] .ico-fs-on,
+#btn-fs-label .ico-fs-off, #btn-fs-label[aria-pressed="true"] .ico-fs-on { display: none; }
+#btn-fs[aria-pressed="true"] .ico-fs-off, #btn-fs-label[aria-pressed="true"] .ico-fs-off { display: block; }
+@media (max-width: 420px) {
+  .canvas-tools { grid-template-columns: repeat(5, 1fr); }
+  .is-fullscreen .canvas-tools { grid-template-columns: repeat(6, 1fr); }
+}
+
+/* Mit Tabelle daneben: Einstellungen immer unter den Graphen. Sonst
+   schrumpft er zwischen Einstellungen und Tabelle zur Mittelspalte. */
+#screen-app.is-split #tab-explorer.is-active { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) {
+  #tab-explorer .graph-canvas { height: clamp(300px, 60vh, 640px); }
+  @supports (height: 1dvh) { #tab-explorer .graph-canvas { height: clamp(300px, 60dvh, 640px); } }
+}
+
+/* --- Vollbild ---------------------------------------------------------------
+   Eine Ueberlagerung statt nur der Browser-Funktion: die gibt es am iPhone
+   fuer normale Seitenelemente nicht. Dialoge liegen in der obersten Ebene
+   des Browsers und bleiben darueber bedienbar; Hinweise (z-index 50)
+   ebenfalls. */
+:root.is-fs, :root.is-fs body { overflow: hidden; }
+#tab-explorer .canvas-panel.is-fullscreen {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: .5rem;
+  padding: calc(.5rem + env(safe-area-inset-top)) calc(.5rem + env(safe-area-inset-right))
+           calc(.5rem + env(safe-area-inset-bottom)) calc(.5rem + env(safe-area-inset-left));
+  background: var(--bg);
+}
+#tab-explorer .canvas-panel.is-fullscreen .canvas-stage {
+  position: relative; top: auto; z-index: auto;
+  display: flex; flex-direction: column; min-height: 0; padding-bottom: 0;
+}
+/* Hoehe aus dem Raster, nicht aus der Canvas selbst - sonst schaukelt sich
+   die Pixelgroesse der Canvas ueber ihre Anzeigegroesse hoch. */
+#tab-explorer .canvas-panel.is-fullscreen .graph-canvas { flex: 1 1 0; height: 0; min-height: 0; }
+#tab-explorer .canvas-panel.is-fullscreen .live-panel { max-height: 40vh; overflow: auto; align-content: start; }
+@supports (height: 1dvh) {
+  #tab-explorer .canvas-panel.is-fullscreen .live-panel { max-height: 40dvh; }
+}
+#tab-explorer .canvas-panel.is-fullscreen .hint,
+#tab-explorer .canvas-panel.is-fullscreen #btn-table-toggle { display: none; }
+@media (orientation: landscape) and (min-width: 700px) {
+  #tab-explorer .canvas-panel.is-fullscreen {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 30%);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  #tab-explorer .canvas-panel.is-fullscreen .live-panel { max-height: none; }
+}
+#tab-explorer .canvas-panel.is-fullscreen.fs-panel-hidden { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+#tab-explorer .canvas-panel.is-fullscreen.fs-panel-hidden .live-panel { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .more-fns { animation: none; }
+  .more-plus { transition: none; }
+}
+
 
 /* ==========================================================================
    [hidden] muss gewinnen

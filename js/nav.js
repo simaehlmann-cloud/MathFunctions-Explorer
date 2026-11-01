@@ -82,6 +82,35 @@ function openDialog(el) {
   return true;
 }
 
+/* --------------------------------------------------------------------------
+   Ebenen: Ansichten, die wie ein Dialog ueber allem liegen, aber kein
+   <dialog> sind - das Vollbild des Graphen. Sie bekommen einen eigenen
+   Verlaufseintrag, damit Zurueck (Android-Taste, Browser, Wischgeste) sie
+   schliesst, statt den Bildschirm zu verlassen.
+
+   onClose wird NUR aufgerufen, wenn Zurueck die Ebene schliesst. Schliesst
+   die App sie selbst (Knopf, Esc), ruft sie closeLayer() - das nimmt den
+   Verlaufseintrag wieder heraus, ohne onClose noch einmal auszuloesen.
+   -------------------------------------------------------------------------- */
+const layers = [];      // [{ id, onClose }], oberste zuletzt
+
+function openLayer(id, onClose) {
+  if (layers.some(l => l.id === id)) return false;
+  layers.push({ id, onClose });
+  try { history.pushState(markOf({ ...current, dialog: 'layer:' + id }), '', here()); depth++; } catch {}
+  return true;
+}
+
+/** Ebene schliessen, die die App selbst beendet hat. silent: den
+ *  Verlaufseintrag nicht anfassen (nur fuer Notfaelle, etwa wenn ein
+ *  anderer Weg den Bildschirm schon gewechselt hat). */
+function closeLayer(id, { silent = false } = {}) {
+  const i = layers.findIndex(l => l.id === id);
+  if (i < 0) return;
+  layers.splice(i, 1);
+  if (!silent && history.state?.[KEY]?.dialog === 'layer:' + id) history.back();
+}
+
 function openDialogs() {
   return Array.from(document.querySelectorAll('dialog')).filter(d => d.open);
 }
@@ -93,7 +122,19 @@ function handlePop(e) {
   // Ein offener Dialog wird zuerst geschlossen - und zwar nur der oberste.
   // Alle auf einmal zu schliessen wuerde die Verlaufseintraege der darunter
   // liegenden stehen lassen; der naechste Zurueck-Druck liefe dann ins Leere.
+  // Eine offene Ebene ist das Oberste - ausser ein Dialog liegt darueber
+  // (etwa der Parameter-Dialog im Vollbild). Der kommt dann zuerst dran.
   const open = openDialogs();
+  // Nur schliessen, wenn wir UNTER den Eintrag der Ebene zurueckgegangen
+  // sind. Landet Zurueck genau auf ihm, wurde nur ein Dialog darueber
+  // entfernt (etwa der Parameter-Dialog per eigenem Knopf) - die Ebene bleibt.
+  const topLayer = layers[layers.length - 1];
+  if (topLayer && !open.length && mark?.dialog !== 'layer:' + topLayer.id) {
+    const top = layers.pop();
+    try { top.onClose?.(); } catch {}
+    if (mark) { current = { screen: mark.screen, tab: mark.tab }; apply(current); }
+    return;
+  }
   if (open.length) {
     const top = open[open.length - 1];
     try { top.close('back'); } catch {}
@@ -133,7 +174,7 @@ function bindNativeBack() {
       e.preventDefault?.();
       // Nicht canGoBack der WebView auswerten: dort zaehlen auch Eintraege
       // mit, die nicht von uns stammen. Massgeblich ist unsere eigene Tiefe.
-      if (openDialogs().length || depth > 0) { history.back(); return; }
+      if (openDialogs().length || layers.length || depth > 0) { history.back(); return; }
       if (guardExit()) navigator.app?.exitApp?.();
     }, false);
   }, false);
@@ -151,7 +192,8 @@ function init(hooks) {
   bindNativeBack();
 }
 
-return { init, go, replace, openDialog,
+return { init, go, replace, openDialog, openLayer, closeLayer,
+         get layers() { return layers.map(l => l.id); },
          get current() { return { ...current }; },
          get depth() { return depth; },
          isNative };

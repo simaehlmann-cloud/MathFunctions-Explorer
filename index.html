@@ -69,73 +69,87 @@
 <!-- ====================== STARTSEITE ====================== -->
 <main id="screen-home" class="screen is-active">
   <div class="home-inner">
-    <p class="eyebrow" data-i18n="home.eyebrow">Klasse 7 bis 11</p>
+    <p class="eyebrow" data-i18n="home.eyebrow">Klasse 7 bis 13</p>
     <h1 class="home-title" data-i18n="home.title">Welche Funktion willst du untersuchen?</h1>
 
-    <!-- Schnellwahl fuer alle, die schon wissen, wohin sie wollen. Die Karten
-         bleiben: fuer Schuelerinnen und Schueler ist das Bild der Kurve der
-         schnellere Weg als ein Listeneintrag. -->
-    <div class="quick-pick">
-      <label for="home-select" data-i18n="home.quickPick">Oder direkt auswählen</label>
-      <select id="home-select"></select>
-    </div>
-
-    <div class="fn-grid">
-      <button class="fn-card" type="button" data-category="linear">
+    <!-- Die vier Klassen der Mittelstufe als grosse Karten, jede in ihrer
+         eigenen Farbe. Die Reihenfolge ist fest (fachlich), auch wenn eine
+         Klasse in der kostenlosen Version gesperrt ist - sie traegt dann
+         nur das Pro-Abzeichen. Alles Weitere liegt hinter der fuenften
+         Karte und klappt auf derselben Seite auf. -->
+    <div class="fn-grid fn-grid-main">
+      <button class="fn-card cat-card" type="button" data-category="linear" data-cat="linear">
         <canvas class="fn-thumb" data-thumb="linear" aria-hidden="true"></canvas>
         <span class="fn-name" data-i18n="cat.linear"></span>
         <span class="fn-form">f(x) = m·x + b</span>
       </button>
-      <button class="fn-card" type="button" data-category="quadratic" data-feature="cat.quadratic">
+      <button class="fn-card cat-card" type="button" data-category="quadratic" data-cat="quadratic" data-feature="cat.quadratic">
         <canvas class="fn-thumb" data-thumb="quadratic" aria-hidden="true"></canvas>
         <span class="fn-name" data-i18n="cat.quadratic"></span>
-        <span class="fn-form">f(x) = a·x² + b·x + c</span>
+        <span class="fn-form">f(x) = a·x<sup>2</sup> + b·x + c</span>
       </button>
-      <button class="fn-card" type="button" data-category="polynomial" data-feature="cat.polynomial">
-        <canvas class="fn-thumb" data-thumb="polynomial" aria-hidden="true"></canvas>
-        <span class="fn-name" data-i18n="cat.polynomial"></span>
-        <span class="fn-form">f(x) = a·x³ + b·x² + c·x + d</span>
-      </button>
-      <button class="fn-card" type="button" data-category="exponential">
+      <button class="fn-card cat-card" type="button" data-category="exponential" data-cat="exponential">
         <canvas class="fn-thumb" data-thumb="exponential" aria-hidden="true"></canvas>
         <span class="fn-name" data-i18n="cat.exponential"></span>
-        <span class="fn-form">f(x) = a·b^x + c</span>
+        <span class="fn-form">f(x) = a·b<sup>x</sup> + c</span>
       </button>
-      <button class="fn-card" type="button" data-category="logarithm" data-feature="cat.logarithm">
-        <canvas class="fn-thumb" data-thumb="logarithm" aria-hidden="true"></canvas>
-        <span class="fn-name" data-i18n="cat.logarithm"></span>
-        <span class="fn-form">f(x) = a·ln(x − b) + c</span>
-      </button>
-      <button class="fn-card" type="button" data-category="trig" data-feature="cat.trig">
+      <button class="fn-card cat-card" type="button" data-category="trig" data-cat="trig" data-feature="cat.trig">
         <canvas class="fn-thumb" data-thumb="trig" aria-hidden="true"></canvas>
         <span class="fn-name" data-i18n="cat.trig"></span>
         <span class="fn-form">f(x) = a·sin(b·(x − c)) + d</span>
       </button>
-      <button class="fn-card" type="button" data-category="root" data-feature="cat.root">
-        <canvas class="fn-thumb" data-thumb="root" aria-hidden="true"></canvas>
-        <span class="fn-name" data-i18n="cat.root"></span>
-        <span class="fn-form">f(x) = a·√(x − b) + c</span>
-      </button>
-      <button class="fn-card" type="button" data-category="absolute" data-feature="cat.absolute">
-        <canvas class="fn-thumb" data-thumb="absolute" aria-hidden="true"></canvas>
-        <span class="fn-name" data-i18n="cat.absolute"></span>
-        <span class="fn-form">f(x) = a·|x − b| + c</span>
-      </button>
-      <button class="fn-card" type="button" data-category="rational" data-feature="cat.rational">
-        <canvas class="fn-thumb" data-thumb="rational" aria-hidden="true"></canvas>
-        <span class="fn-name" data-i18n="cat.rational"></span>
-        <span class="fn-form">f(x) = a/(x − b) + c</span>
+      <button class="fn-card cat-card more-card" type="button" id="btn-more-fns" data-cat="more"
+              aria-expanded="false" aria-controls="more-fns">
+        <span class="more-mark" aria-hidden="true"><span class="more-plus">+</span></span>
+        <span class="fn-name" data-i18n="home.moreFns">Weitere Funktionen</span>
+        <span class="fn-desc" data-i18n="home.moreFnsDesc">Ganzrational, Logarithmus, Wurzel, Betrag, gebrochenrational – vor allem für die Oberstufe</span>
       </button>
     </div>
 
+    <section id="more-fns" class="more-fns" hidden data-i18n-aria="home.moreFns">
+      <h2 class="home-sub" data-i18n="home.moreTitle">Weitere Funktionsklassen</h2>
+      <div class="fn-grid fn-grid-more">
+        <button class="fn-card cat-card" type="button" data-category="polynomial" data-cat="more" data-feature="cat.polynomial">
+          <canvas class="fn-thumb" data-thumb="polynomial" aria-hidden="true"></canvas>
+          <span class="fn-name" data-i18n="cat.polynomial"></span>
+          <span class="fn-form">f(x) = a·x<sup>3</sup> + b·x<sup>2</sup> + c·x + d</span>
+        </button>
+        <button class="fn-card cat-card" type="button" data-category="logarithm" data-cat="more" data-feature="cat.logarithm">
+          <canvas class="fn-thumb" data-thumb="logarithm" aria-hidden="true"></canvas>
+          <span class="fn-name" data-i18n="cat.logarithm"></span>
+          <span class="fn-form">f(x) = a·ln(x − b) + c</span>
+        </button>
+        <button class="fn-card cat-card" type="button" data-category="root" data-cat="more" data-feature="cat.root">
+          <canvas class="fn-thumb" data-thumb="root" aria-hidden="true"></canvas>
+          <span class="fn-name" data-i18n="cat.root"></span>
+          <span class="fn-form">f(x) = a·<span class="sqrt-sign">√</span><span class="radicand">x − b</span> + c</span>
+        </button>
+        <button class="fn-card cat-card" type="button" data-category="absolute" data-cat="more" data-feature="cat.absolute">
+          <canvas class="fn-thumb" data-thumb="absolute" aria-hidden="true"></canvas>
+          <span class="fn-name" data-i18n="cat.absolute"></span>
+          <span class="fn-form">f(x) = a·|x − b| + c</span>
+        </button>
+        <button class="fn-card cat-card" type="button" data-category="rational" data-cat="more" data-feature="cat.rational">
+          <canvas class="fn-thumb" data-thumb="rational" aria-hidden="true"></canvas>
+          <span class="fn-name" data-i18n="cat.rational"></span>
+          <span class="fn-form">f(x) = a/(x − b) + c</span>
+        </button>
+      </div>
+    </section>
+
     <h2 class="home-sub" data-i18n="home.more">Weiter geht es hier</h2>
-    <div class="fn-grid">
-      <button class="fn-card tool-card" type="button" id="card-quizzes" data-feature="quizBuilder">
+    <div class="fn-grid fn-grid-tools">
+      <button class="fn-card tool-card" type="button" id="card-practice" data-tool="practice">
+        <span class="tool-mark" aria-hidden="true">✓</span>
+        <span class="fn-name" data-i18n="home.practice">Üben</span>
+        <span class="fn-desc" id="card-practice-desc"></span>
+      </button>
+      <button class="fn-card tool-card" type="button" id="card-quizzes" data-tool="quizzes" data-feature="quizBuilder">
         <span class="tool-mark" aria-hidden="true">?</span>
         <span class="fn-name" data-i18n="home.quizzes">Eigene Quizze</span>
         <span class="fn-desc" data-i18n="home.quizzesDesc">Aufgaben zusammenstellen, speichern und als Link weitergeben.</span>
       </button>
-      <button class="fn-card tool-card" type="button" id="card-info">
+      <button class="fn-card tool-card" type="button" id="card-info" data-tool="info">
         <span class="tool-mark" aria-hidden="true">i</span>
         <span class="fn-name" data-i18n="home.about">Über MathFunctions Explorer</span>
         <span class="fn-desc" data-i18n="home.aboutDesc">Was die App kann, für wen sie gedacht ist und was Pro freischaltet.</span>
@@ -160,6 +174,9 @@
             aria-selected="false" data-tab="table" data-i18n="tab.table">Wertetabelle</button>
     <button class="tab-btn" role="tab" id="tab-btn-quiz" tabindex="-1" aria-controls="tab-quiz"
             aria-selected="false" data-tab="quiz" data-i18n="tab.quiz">Üben</button>
+    <!-- Welche Klasse gerade offen ist - in ihrer Farbe. Reine Orientierung,
+         fuer Screenreader steht dasselbe schon in der Gleichung. -->
+    <span id="cat-badge" class="cat-badge" aria-hidden="true"></span>
   </nav>
 
   <!-- ---------- EXPLORER ----------
@@ -190,12 +207,54 @@
         <div class="canvas-tools">
           <button id="btn-zoom-in"  class="map-btn" type="button" data-i18n-title="btn.zoomIn"  data-i18n-aria="btn.zoomIn">+</button>
           <button id="btn-zoom-out" class="map-btn" type="button" data-i18n-title="btn.zoomOut" data-i18n-aria="btn.zoomOut">−</button>
-          <button id="btn-fit"      class="map-btn" type="button" data-i18n-title="btn.fit"     data-i18n-aria="btn.fit">⤢</button>
+          <!-- Frueher stand hier ⤢ - das sieht aus wie das uebliche
+               Vollbild-Symbol und wurde dafuer gehalten. Jetzt eine Lupe
+               ueber einer Kurve: "Ausschnitt an die Kurve anpassen". -->
+          <button id="btn-fit"      class="map-btn" type="button" data-i18n-title="btn.fit"     data-i18n-aria="btn.fit">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" class="ico">
+              <circle cx="10" cy="10" r="6.5"/><path d="M15 15l5.5 5.5"/><path d="M6.5 12c1.2-3.5 2.4-3.5 3.5-1s2.3 2.5 3.5-1"/>
+            </svg>
+          </button>
           <button id="btn-reset-view" class="map-btn" type="button" data-i18n-title="btn.resetView" data-i18n-aria="btn.resetView">⌂</button>
+          <button id="btn-fs" class="map-btn" type="button" aria-pressed="false" data-i18n-title="btn.fullscreen" data-i18n-aria="btn.fullscreen">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" class="ico ico-fs-on">
+              <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+            </svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" class="ico ico-fs-off">
+              <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>
+            </svg>
+          </button>
+          <!-- Nur im Vollbild: Gleichung und Regler ein- und ausblenden. -->
+          <button id="btn-fs-panel" class="map-btn" type="button" aria-pressed="true" hidden
+                  data-i18n-title="btn.fsPanel" data-i18n-aria="btn.fsPanel">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" class="ico">
+              <path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.8"/><circle cx="15" cy="12" r="1.8"/><circle cx="7" cy="17" r="1.8"/>
+            </svg>
+          </button>
         </div>
       </div>
 
       <div class="live-panel">
+        <!-- Die beiden Schalter, die man suchen wuerde: beschriftet, nicht
+             nur als Symbol. Die Wertetabelle ist eine eigene Darstellungsart
+             und bekommt deshalb den auffaelligsten Knopf. -->
+        <div class="graph-actions">
+          <button id="btn-table-toggle" class="btn-table" type="button" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" class="ico">
+              <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M12 4.5v15"/>
+            </svg>
+            <span id="btn-table-label" data-i18n="btn.table">Wertetabelle</span>
+          </button>
+          <button id="btn-fs-label" class="btn-fs" type="button" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" class="ico ico-fs-on">
+              <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+            </svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" class="ico ico-fs-off">
+              <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>
+            </svg>
+            <span id="btn-fs-text" data-i18n="btn.fullscreen">Vollbild</span>
+          </button>
+        </div>
         <div id="equations" class="equations"></div>
         <div id="parameters-container" class="sliders compact"></div>
         <p class="hint" data-i18n="hint.params">Tippe auf einen Parameter, um Buchstabe und Bedeutung zu ändern.</p>
@@ -213,22 +272,41 @@
 
       <details class="panel-section" open>
         <summary data-i18n="lbl.show">Im Graphen anzeigen</summary>
-        <div class="canvas-toolbar">
-          <label class="chip"><input type="checkbox" id="opt-helpers" checked><span data-i18n="opt.helpers">Hilfslinien</span></label>
-          <label class="chip"><input type="checkbox" id="opt-roots"><span data-i18n="opt.roots">Nullstellen</span></label>
-          <label class="chip"><input type="checkbox" id="opt-yint"><span data-i18n="opt.yint">y-Achsenabschnitt</span></label>
-          <label class="chip"><input type="checkbox" id="opt-vertex"><span data-i18n="opt.vertex">Scheitelpunkt</span></label>
-          <label class="chip"><input type="checkbox" id="opt-intersections"><span data-i18n="opt.intersections">Schnittpunkte</span></label>
-          <label class="chip"><input type="checkbox" id="opt-drag"><span data-i18n="opt.drag">Graph anfassen</span></label>
-          <label class="chip"><input type="checkbox" id="opt-derivative"><span data-i18n="opt.derivative">Ableitung f′</span></label>
-          <label class="chip"><input type="checkbox" id="opt-tangent"><span data-i18n="opt.tangent">Tangente</span></label>
-          <label class="chip"><input type="checkbox" id="opt-trace"><span data-i18n="opt.trace">Punkt verfolgen</span></label>
-          <label class="chip"><input type="checkbox" id="opt-secant"><span data-i18n="opt.secant">Sekante (Differenzenquotient)</span></label>
-          <label class="chip"><input type="checkbox" id="opt-trail"><span data-i18n="opt.trail">Spur beim Ziehen</span></label>
-          <label class="chip"><input type="checkbox" id="opt-locus"><span data-i18n="opt.locus">Ortskurve</span></label>
-          <label class="chip"><input type="checkbox" id="opt-showTerm" checked><span data-i18n="opt.showTerm">Term mit Zahlen zeigen</span></label>
-          <!-- Nur sichtbar, wenn der Bildschirm breit genug ist. -->
-          <label class="chip" id="chip-split" hidden><input type="checkbox" id="opt-split" checked><span data-i18n="opt.split">Wertetabelle daneben</span></label>
+        <!-- Vier Gruppen statt einer langen Reihe. Alles ist zu Beginn aus,
+             ausser der Gleichung mit Zahlen. Die letzte Gruppe ist Stoff der
+             Oberstufe und steht deshalb am Ende. -->
+        <div class="chip-group" data-group="view">
+          <h3 class="chip-group-title" data-i18n="grp.view">Darstellung</h3>
+          <div class="canvas-toolbar">
+            <label class="chip"><input type="checkbox" id="opt-showTerm" checked><span data-i18n="opt.showTerm">Gleichung mit Zahlen</span></label>
+            <label class="chip"><input type="checkbox" id="opt-helpers"><span data-i18n="opt.helpers">Hilfslinien</span></label>
+          </div>
+        </div>
+        <div class="chip-group" data-group="points">
+          <h3 class="chip-group-title" data-i18n="grp.points">Besondere Punkte</h3>
+          <div class="canvas-toolbar">
+            <label class="chip"><input type="checkbox" id="opt-roots"><span data-i18n="opt.roots">Nullstellen</span></label>
+            <label class="chip"><input type="checkbox" id="opt-yint"><span data-i18n="opt.yint">y-Achsenabschnitt</span></label>
+            <label class="chip"><input type="checkbox" id="opt-vertex"><span data-i18n="opt.vertex">Scheitelpunkt</span></label>
+            <label class="chip"><input type="checkbox" id="opt-intersections"><span data-i18n="opt.intersections">Schnittpunkte</span></label>
+          </div>
+        </div>
+        <div class="chip-group" data-group="tools">
+          <h3 class="chip-group-title" data-i18n="grp.tools">Werkzeuge</h3>
+          <div class="canvas-toolbar">
+            <label class="chip"><input type="checkbox" id="opt-drag"><span data-i18n="opt.drag">Graph anfassen</span></label>
+            <label class="chip"><input type="checkbox" id="opt-trace"><span data-i18n="opt.trace">Punkt verfolgen</span></label>
+            <label class="chip"><input type="checkbox" id="opt-trail"><span data-i18n="opt.trail">Spur beim Ziehen</span></label>
+            <label class="chip"><input type="checkbox" id="opt-locus"><span data-i18n="opt.locus">Ortskurve</span></label>
+          </div>
+        </div>
+        <div class="chip-group" data-group="calculus">
+          <h3 class="chip-group-title" data-i18n="grp.calculus">Ableitung (Oberstufe)</h3>
+          <div class="canvas-toolbar">
+            <label class="chip"><input type="checkbox" id="opt-derivative"><span data-i18n="opt.derivative">Ableitung f′</span></label>
+            <label class="chip"><input type="checkbox" id="opt-tangent"><span data-i18n="opt.tangent">Tangente</span></label>
+            <label class="chip"><input type="checkbox" id="opt-secant"><span data-i18n="opt.secant">Sekante (Differenzenquotient)</span></label>
+          </div>
         </div>
 
         <!-- Sekante: Stelle kommt aus dem Koordinatensystem (derselbe Punkt
