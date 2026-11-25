@@ -61,7 +61,8 @@ MFE.licence = (() => {
     'export',         // PNG-Export, Arbeitsblatt
     'share',          // Deep Link kopieren
     'drag',           // Graph anfassen
-    'transform'       // Transformation abspielen
+    'transform',      // Transformation abspielen
+    'learnPaths'      // Lernpfade zum selbststaendigen Lernen
   ]);
 
   /** Laeuft die App als iOS-App mit App-Store-Kauf? */

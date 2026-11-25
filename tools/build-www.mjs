@@ -49,6 +49,8 @@ const FILES = [
   'js/ui.js',
   'js/qr.js',
   'js/quiz.js',
+  'js/paths.js',
+  'js/paths-quadratic.js',
   'js/app.js'
 ];
 

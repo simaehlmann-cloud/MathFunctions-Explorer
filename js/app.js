@@ -23,13 +23,13 @@ const STORAGE_KEY = 'mfe:v3';
 const SESSION_KEY = 'mfe:session';
 const SESSION_MAX_AGE = 30 * 24 * 3600 * 1000;   // 30 Tage
 const CURVE_NAMES = ['f', 'g'];
-const SCREENS = ['home', 'app', 'quizzes', 'builder', 'play', 'info'];
+const SCREENS = ['home', 'app', 'quizzes', 'builder', 'play', 'info', 'learn', 'lesson'];
 const BEAMER_SCALE = 1.55;
 /* Wird von tools/build-www.mjs aus package.json gesetzt; tools/check.mjs
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '7.1.1';
+const APP_VERSION = '7.2.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -2175,7 +2175,7 @@ function setMoreOpen(open, { scroll = false } = {}) {
 function renderInfo() {
   const ul = $('#info-features');
   ul.replaceChildren();
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= 13; i++) {
     const li = document.createElement('li');
     li.textContent = t('info.f' + i);
     ul.append(li);
@@ -2351,6 +2351,7 @@ function applyLanguage() {
   renderInfo();
   paintFullscreenButtons();
   MFE.quiz.relabel();
+  MFE.paths.relabel();
   if (quiz.answer) renderQuizOptions();
   if (practice.ctx) renderSliderGroup($('#practice-params'), practice.ctx);
 }
@@ -2373,6 +2374,7 @@ function applyTheme() {
   invalidateTable();
   render();
   drawQuiz(); drawPractice(); drawThumbs();
+  MFE.paths.redraw();
 }
 
 function applyDisplay() {
@@ -2383,6 +2385,7 @@ function applyDisplay() {
     measureChrome();
     mainGraph.measure(); render();
     drawQuiz(); drawPractice(); drawThumbs();
+    MFE.paths.redraw();
   });
 }
 
@@ -2407,6 +2410,8 @@ function applyScreen(which) {
   if (which === 'app') requestAnimationFrame(() => { measureChrome(); mainGraph.measure(); render(); });
   if (which === 'home') { renderPracticeCard(); requestAnimationFrame(drawThumbs); }
   if (which === 'info') renderInfo();
+  // Lernpfade zeichnen selbst - auch beim Zurueck-Knopf, der nur applyScreen ruft.
+  if (which === 'learn' || which === 'lesson') MFE.paths.onShow(which);
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
@@ -2525,6 +2530,10 @@ function bindEvents() {
     setMoreOpen($('#more-fns').hidden, { scroll: true });
   });
   $('#card-practice').addEventListener('click', () => showScreen('app', 'quiz'));
+  $('#card-learn').addEventListener('click', () => {
+    if (!licence.has('learnPaths')) { proHint(); return; }
+    MFE.paths.openOverview();
+  });
 
   $('#btn-table-toggle').addEventListener('click', toggleTable);
   $('#btn-fs').addEventListener('click', () => setFullscreen(!fs.on));
@@ -2849,12 +2858,13 @@ function bindEvents() {
     drawQuiz(); drawPractice(); drawThumbs();
     if (race.on) drawRace();
     if (trap.task) drawTrap();
+    MFE.paths.redraw();
   }, 100);
 
   if ('ResizeObserver' in window) {
     const ro = new ResizeObserver(onResize);
     ['#graph-canvas', '#quiz-canvas', '#practice-canvas', '#race-canvas',
-     '#trap-canvas', '.app-header'].forEach(s => {
+     '#trap-canvas', '#lesson-canvas', '.app-header'].forEach(s => {
       const el = $(s);
       if (el) ro.observe(el);
     });
@@ -3029,6 +3039,13 @@ function init() {
     symbolOf,
     view: viewOf,
     scale: sceneScale
+  });
+
+  MFE.paths.init({
+    showScreen,
+    symbolOf,
+    scale: sceneScale,
+    proHint: () => proHint()
   });
 
   MFE.nav.init({

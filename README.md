@@ -18,6 +18,42 @@ funktioniert auch (`file://`), nur ohne Service Worker.
 
 ---
 
+## 7.2.0 – Lernpfade zum selbstständigen Lernen (Pro)
+
+Neue Karte „Lernpfade“ auf der Startseite. Ein Lernpfad führt Schritt für
+Schritt durch eine Funktionsklasse, in der Reihenfolge der Westermann-Lehrwerke.
+Jeder Schritt hat vier Phasen:
+
+1. **Vermuten** – Frage vor dem Ausprobieren, ohne Punkte (Predict-Observe-Explain).
+2. **Entdecken** – nur der neue Parameter ist frei; Aufträge („Scheitelpunkt
+   S(0 | 3)“) werden beim *Loslassen* des Reglers geprüft, nicht beim
+   Vorbeiziehen. Am Ende wird die Vermutung aufgelöst.
+3. **Merken** – Merkkasten.
+4. **Üben** – fünf gemischte Aufgaben, bestanden ab 4 Punkten; zweiter Versuch
+   halber Punkt. Fehlvorstellungen (über `diagnose.js`) verweisen auf den
+   Schritt, der den Parameter eingeführt hat.
+
+Gesperrte Schritte lassen sich „direkt testen“ (Einstufung): Wer besteht,
+überspringt die Schritte davor. Fortschritt nur lokal (`mfe:paths`).
+
+Pilot: **Quadratische Funktionen**, 8 Schritte – Normalparabel, x² + e,
+(x − d)², (x − d)² + e, a·x², Scheitelpunktform, Normalform/quadratische
+Ergänzung, Nullstellen. Die Reihenfolge steht ganz unten in
+`js/paths-quadratic.js` und lässt sich dort umstellen.
+
+Aufbau: `js/paths.js` ist die Engine (ohne Inhalte), jede Klasse bekommt eine
+eigene Inhaltsdatei, die sich mit `MFE.paths.register()` anmeldet. Texte unter
+`lp.*` in `js/i18n.js`; Parameter stehen dort als `{a}`, `{d}`, `{e}` und
+übernehmen die selbst gewählten Buchstaben.
+
+`tools/paths-test.mjs` (`npm run paths`) prüft erschöpfend: jeder Auftrag ist
+auf dem Reglerraster erreichbar, 16 000 erzeugte Aufgaben werden unabhängig
+nachgerechnet, beide Sprachen ohne Platzhalterreste, Fortschritt und fremde
+Speicherdaten. `tools/smoke.mjs` spielt alle acht Schritte über die Oberfläche
+durch.
+
+---
+
 ## 7.1.1 – Dunkles Farbschema
 
 Rückmeldung vom iPad im Dunkelmodus: alles sehr blau und düster. Der Grund ist

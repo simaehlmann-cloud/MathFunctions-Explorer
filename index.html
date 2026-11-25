@@ -139,6 +139,11 @@
 
     <h2 class="home-sub" data-i18n="home.more">Weiter geht es hier</h2>
     <div class="fn-grid fn-grid-tools">
+      <button class="fn-card tool-card" type="button" id="card-learn" data-tool="learn" data-feature="learnPaths">
+        <span class="tool-mark" aria-hidden="true">&#x276F;</span>
+        <span class="fn-name" data-i18n="home.learn">Lernpfade</span>
+        <span class="fn-desc" data-i18n="home.learnDesc">Schritt für Schritt allein lernen: vermuten, entdecken, merken, üben.</span>
+      </button>
       <button class="fn-card tool-card" type="button" id="card-practice" data-tool="practice">
         <span class="tool-mark" aria-hidden="true">✓</span>
         <span class="fn-name" data-i18n="home.practice">Üben</span>
@@ -625,6 +630,58 @@
   </div>
 </main>
 
+<!-- ====================== LERNPFADE: ÜBERSICHT ====================== -->
+<main id="screen-learn" class="screen" data-cat="quadratic">
+  <div class="page-inner">
+    <button class="back-link" type="button" data-back="home" data-i18n="btn.back">Zurück</button>
+    <h1 class="page-title" data-i18n="lp.title">Lernpfade</h1>
+    <p class="page-lead" data-i18n="lp.lead">Jeder Schritt führt genau einen Gedanken ein.</p>
+
+    <div id="lp-classes" class="segmented lp-classes" role="group" data-i18n-aria="lp.classes"></div>
+
+    <section class="lp-path" aria-labelledby="lp-path-title">
+      <div class="lp-path-head">
+        <h2 id="lp-path-title"></h2>
+        <p id="lp-path-meta" class="quiz-meta"></p>
+      </div>
+      <div id="lp-bar" class="lp-bar" role="progressbar" aria-valuemin="0" aria-valuenow="0" aria-valuemax="8"
+           data-i18n-aria="lp.title"><div id="lp-bar-fill" class="lp-bar-fill"></div></div>
+      <p id="lp-all-done" class="lp-done" hidden data-i18n="lp.allDone">Alle Schritte geschafft.</p>
+      <ol id="lp-steps" class="lp-steps"></ol>
+      <div class="action-row">
+        <button id="btn-lp-continue" class="btn-primary" type="button" data-i18n="lp.continue">Weiterlernen</button>
+        <button id="btn-lp-reset" class="btn-ghost" type="button" data-i18n="lp.reset">Fortschritt zurücksetzen</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- ====================== LERNPFADE: EIN SCHRITT ====================== -->
+<main id="screen-lesson" class="screen" data-cat="quadratic">
+  <div class="page-inner">
+    <button class="back-link" type="button" id="btn-lesson-back" data-i18n="lp.backToPath">Zur Übersicht</button>
+    <p id="lesson-kicker" class="eyebrow"></p>
+    <h1 id="lesson-title" class="page-title"></h1>
+    <ol id="lesson-phases" class="lp-phases" data-i18n-aria="lp.phases"></ol>
+
+    <div class="lesson-grid">
+      <div class="lesson-main">
+        <div id="lesson-body" class="lesson-body"></div>
+        <div id="lesson-stage" class="lesson-stage" hidden>
+          <canvas id="lesson-canvas" class="graph-canvas short" role="img" data-i18n-aria="lp.canvas"></canvas>
+          <p id="lesson-eq" class="equation-display lesson-eq" aria-live="polite"></p>
+          <div id="lesson-sliders" class="sliders compact"></div>
+        </div>
+      </div>
+      <div class="lesson-side">
+        <div id="lesson-panel" class="lesson-panel"></div>
+        <p id="lesson-feedback" class="feedback" role="status" aria-live="polite"></p>
+        <div id="lesson-actions" class="action-row"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
 <!-- ====================== ÜBER DIE APP ====================== -->
 <main id="screen-info" class="screen">
   <div class="page-inner">
@@ -763,6 +820,8 @@
 <script src="js/ui.js"></script>
 <script src="js/qr.js"></script>
 <script src="js/quiz.js"></script>
+<script src="js/paths.js"></script>
+<script src="js/paths-quadratic.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -1273,3 +1273,108 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 }
 .view-mini .map-btn { opacity: .9; }
 .view-mini .map-btn:hover, .view-mini .map-btn:focus-visible { opacity: 1; }
+
+/* ==========================================================================
+   Lernpfade (js/paths.js)
+   Farben kommen aus der Funktionsklasse (data-cat am Bildschirm) - der Pfad
+   "Quadratische Funktionen" traegt dieselbe Farbe wie ihre Karte.
+   ========================================================================== */
+.tool-card[data-tool="learn"] { --tool: var(--c-trig); }
+
+.lp-classes { display: flex; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.lp-classes .seg-btn:disabled { opacity: .5; cursor: not-allowed; }
+#screen-learn .seg-btn.is-active { color: var(--cat-ink, var(--accent)); }
+
+.lp-path-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
+.page-inner .lp-path-head h2 { margin: 0; color: var(--cat-ink, var(--text)); }
+.lp-bar {
+  height: 10px; margin: .6rem 0 1rem; border-radius: 999px; overflow: hidden;
+  background: var(--cat-tint, var(--surface-2)); border: 1px solid var(--cat-line, var(--border));
+}
+.lp-bar-fill { height: 100%; width: 0; background: var(--cat, var(--accent)); transition: width .3s ease; }
+.lp-done { padding: .6rem .8rem; border-radius: var(--radius-sm); background: var(--ok-bg); color: var(--ok-text); font-weight: 600; }
+
+.lp-steps { list-style: none; margin: 0 0 1.25rem; padding: 0; display: grid; gap: .6rem; }
+.lp-step {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .25rem .85rem; align-items: start;
+  padding: .85rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.lp-step.st-open { border-color: var(--cat, var(--accent)); box-shadow: 0 0 0 1px var(--cat, var(--accent)) inset; }
+.lp-step.st-locked { opacity: .78; }
+.lp-step h3 { font-size: 1rem; margin: 0 0 .15rem; }
+.lp-goal { margin: 0 0 .2rem; color: var(--text); }
+.page-inner .lp-step p { margin-bottom: .2rem; }
+.lp-num {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 50%;
+  font-weight: 700; background: var(--cat-tint, var(--surface-2)); color: var(--cat-ink, var(--text));
+  border: 2px solid var(--cat-line, var(--border));
+}
+.lp-step.st-done .lp-num, .lp-step.st-skipped .lp-num { background: var(--cat-ink, var(--accent)); color: var(--on-ink, #fff); border-color: transparent; }
+.lp-step-acts { grid-column: 2; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .35rem; }
+.lp-step-acts > * { flex: 0 1 auto; min-height: var(--tap); }
+@media (min-width: 700px) {
+  .lp-step { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+  .lp-step-acts { grid-column: 3; margin-top: 0; }
+}
+
+/* --- Ein Schritt ---------------------------------------------------------- */
+#screen-lesson .eyebrow { color: var(--cat-ink, var(--muted)); }
+.lp-phases {
+  list-style: none; margin: 0 0 1rem; padding: 0;
+  display: flex; flex-wrap: wrap; gap: .35rem; counter-reset: lpphase;
+}
+.lp-phases li {
+  counter-increment: lpphase; padding: .3rem .7rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
+  color: var(--muted); background: var(--surface-2); border: 1px solid var(--border);
+}
+.lp-phases li::before { content: counter(lpphase) " · "; }
+.lp-phases li.is-current { color: var(--on-ink, #fff); background: var(--cat-ink, var(--accent)); border-color: transparent; }
+.lp-phases li.is-done { color: var(--cat-ink, var(--accent)); border-color: var(--cat-line, var(--border)); }
+.lp-phases li.is-done::before { content: "\2713  "; }
+
+.lesson-grid { display: grid; gap: 1rem; }
+@media (min-width: 900px) {
+  .lesson-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }
+}
+.lesson-body:empty { display: none; }
+.lesson-stage { display: grid; gap: .6rem; }
+.lesson-eq { text-align: center; padding: .5rem; border-radius: var(--radius-sm); background: var(--cat-tint, var(--surface-2)); border: 1px solid var(--cat-line, var(--border)); }
+.lesson-eq:empty { display: none; }
+.lesson-panel { display: grid; gap: .6rem; }
+.lesson-panel:empty { display: none; }
+#lesson-actions { margin-top: .75rem; }
+#lesson-actions:empty { display: none; }
+.lesson-side .feedback { margin-top: .5rem; }
+
+.lp-guess {
+  padding: .55rem .75rem; border-left: 4px solid var(--cat, var(--accent));
+  background: var(--cat-tint, var(--surface-2)); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.page-inner h2.lp-sub { margin: 0 0 .3rem; font-size: 1rem; color: var(--cat-ink, var(--text)); }
+.lp-missions { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.lp-missions li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .6rem; align-items: start;
+  padding: .55rem .65rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface);
+}
+.lp-missions li.is-current { border-color: var(--cat, var(--accent)); box-shadow: 0 0 0 1px var(--cat, var(--accent)) inset; font-weight: 600; }
+.lp-missions li.is-todo { opacity: .6; }
+.lp-missions li.is-done { background: var(--ok-bg); color: var(--ok-text); border-color: transparent; }
+.lp-mark {
+  display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  font-size: .85rem; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border);
+}
+.lp-missions li.is-done .lp-mark { background: var(--ok-text); color: var(--ok-bg); border-color: transparent; }
+
+.lp-rule {
+  padding: 1rem 1.1rem; border-radius: var(--radius);
+  background: var(--cat-tint, var(--surface-2)); border: 1px solid var(--cat-line, var(--border));
+  border-left: 6px solid var(--cat, var(--accent));
+}
+.page-inner .lp-rule h2 { margin: 0 0 .5rem; color: var(--cat-ink, var(--text)); }
+.lp-rule ul { margin: 0 0 0 1.1rem; display: grid; gap: .45rem; line-height: 1.5; }
+
+.lp-trace-row .lp-trace-out { display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.lp-progress { margin-bottom: .25rem; }
+.page-inner h2.lp-result { margin: .25rem 0 .75rem; font-size: 1.25rem; }
+.lp-result.is-pass { color: var(--ok-text); }
+.lp-result.is-fail { color: var(--err-text); }

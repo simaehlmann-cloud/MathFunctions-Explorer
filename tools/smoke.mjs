@@ -163,7 +163,8 @@ try {
 } catch {}
 
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
-               'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/app.js'];
+               'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js',
+               'js/paths.js', 'js/paths-quadratic.js', 'js/app.js'];
 for (const f of files) {
   let src = readFileSync(path.join(ROOT, f), 'utf8');
   try { window.eval(src); }
@@ -281,7 +282,7 @@ if (LITE) {
 click('#btn-home'); await tick();
 click('#card-info'); await tick();
 expect($('#screen-info').classList.contains('is-active'), 'Info-Seite geoeffnet');
-expect($('#info-features').children.length === 12, 'Zwoelf Punkte in der Funktionsliste');
+expect($('#info-features').children.length === 13, 'Dreizehn Punkte in der Funktionsliste (mit Lernpfaden)');
 expect([...$('#info-features').children].every(li => li.textContent && !li.textContent.startsWith('info.')),
        'Kein unuebersetzter Schluessel in der Funktionsliste');
 expect($('#info-lite-box').hidden === !LITE, 'Lite-Hinweis erscheint genau in der Lite-Ausgabe');
@@ -1165,7 +1166,7 @@ if (LITE) {
   const cards = $$('.fn-card[data-feature]');
   const catCards = cards.filter(c => c.dataset.category);
   expect(catCards.length === 7, `sieben gesperrte Funktionsklassen (${catCards.length})`);
-  expect(cards.length === 8, `dazu der Quiz-Baukasten, also acht Sperren insgesamt (${cards.length})`);
+  expect(cards.length === 9, `dazu Quiz-Baukasten und Lernpfade, also neun Sperren insgesamt (${cards.length})`);
   expect(cards.every(c => c.classList.contains('is-locked')), 'alle gesperrten Karten tragen die Kennzeichnung');
   expect(cards.every(c => c.getAttribute('aria-disabled') === 'true'), 'und sind als gesperrt ausgezeichnet');
   expect($$('.fn-card:not([data-feature])').length === 5,
@@ -1446,6 +1447,285 @@ click('#btn-lang-de'); await tick();
 click('#btn-home'); await tick();
 click('.fn-card[data-category="linear"]'); await tick();
 
+/* ---- Lernpfade -----------------------------------------------------------
+   Der ganze Weg, so wie eine Schuelerin ihn geht: Uebersicht, Vermutung,
+   Auftraege mit dem Regler, Merkkasten, Uebungsrunde, Ergebnis. Dazu Test
+   statt Lernen, Rueckverweis nach Fehlern, Sprachwechsel mitten im Schritt
+   und der Zurueck-Knopf. Geklickt wird ueber die Oberflaeche, nicht ueber
+   die Schnittstelle - nur so faellt ein toter Knopf auf. */
+const LP = window.MFE.paths;
+const lesson = () => LP.lesson;
+const act = (name) => $(`#lesson-actions [data-act="${name}"]`);
+const lessonActive = () => $('#screen-lesson').classList.contains('is-active');
+const learnActive = () => $('#screen-learn').classList.contains('is-active');
+
+/** Wert in das Zahlenfeld eines Reglers tippen und bestaetigen. */
+function typeParam(id, v) {
+  const f = $('#lp-val-' + id);
+  if (!f) { errors.push(`Regler ${id} im Lernpfad fehlt`); return; }
+  f.value = String(v).replace('.', ',');
+  f.dispatchEvent(new window.Event('change', { bubbles: true }));
+}
+
+/** Aktuelle Uebungsaufgabe beantworten. wrongFirst: erst falsch, dann richtig. */
+async function answer({ right = true, wrongFirst = false } = {}) {
+  const L0 = lesson();
+  const task = L0.task;
+  if (task.type === 'choice') {
+    const btns = $$('#lesson-panel .quiz-opt');
+    const good = btns.find(b => Number(b.dataset.src) === task.correct);
+    const bad = btns.filter(b => Number(b.dataset.src) !== task.correct);
+    if (wrongFirst && btns.length > 2) { click(bad[0]); await tick(); }
+    if (right) click($$('#lesson-panel .quiz-opt').find(b => Number(b.dataset.src) === task.correct));
+    else {
+      click($$('#lesson-panel .quiz-opt').find(b => Number(b.dataset.src) !== task.correct && !b.disabled)); await tick();
+      const left = $$('#lesson-panel .quiz-opt').find(b => Number(b.dataset.src) !== task.correct && !b.disabled);
+      if (left && !lesson().result && act('next') === null) click(left);
+    }
+    expect(good, 'richtige Antwort ist als Knopf vorhanden');
+  } else if (task.type === 'input') {
+    const fields = $$('#lesson-panel input[type="text"]');
+    const fill = (vals) => fields.forEach((f, i) => { f.value = String(vals[i]).replace('.', ','); });
+    if (wrongFirst || !right) { fill(task.answers.map(a => a + 100)); click(act('check')); await tick(); }
+    if (right) fill(task.answers);
+    click(act('check'));
+  } else if (task.type === 'build') {
+    if (wrongFirst || !right) { click(act('check')); await tick(); }   // Start ist nie das Ziel
+    if (right) for (const id of task.free) typeParam(id, task.target[id]);
+    click(act('check'));
+  }
+  await tick();
+}
+
+async function runPractice(opts) {
+  const n = lesson().count;
+  for (let i = 0; i < n; i++) {
+    await answer(typeof opts === 'function' ? opts(i) : opts);
+    expect(act('next'), `Aufgabe ${i + 1}: nach der Antwort gibt es "Weiter"`);
+    click(act('next')); await tick();
+  }
+}
+
+if (LITE) {
+  click('#btn-home'); await tick();
+  expect($('#card-learn').classList.contains('is-locked'), 'iOS ohne Kauf: Lernpfade tragen das Pro-Abzeichen');
+  click('#card-learn'); await tick();
+  expect($('#pro-dialog').open, 'iOS ohne Kauf: Lernpfade oeffnen den Kauf-Dialog');
+  expect(!learnActive(), 'iOS ohne Kauf: die Uebersicht bleibt zu');
+  if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
+  LP.openLesson('quadratic', 0);
+  await tick();
+  expect(!lessonActive(), 'iOS ohne Kauf: auch der direkte Aufruf eines Schritts ist gesperrt');
+  if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
+} else {
+  window.localStorage.removeItem('mfe:paths');
+  click('#btn-home'); await tick();
+  expect(!$('#card-learn').classList.contains('is-locked'), 'Lernpfade sind im Browser frei');
+  click('#card-learn'); await tick();
+  expect(learnActive(), 'Lernpfade: Uebersicht geoeffnet');
+  const segs = $$('#lp-classes .seg-btn');
+  expect(segs.length === 4, `vier Klassen in der Auswahl (${segs.length})`);
+  expect(segs.filter(b => !b.disabled).map(b => b.dataset.path).join() === 'quadratic', 'nur die quadratischen Funktionen sind schon da');
+  let items = $$('#lp-steps .lp-step');
+  expect(items.length === 8, `acht Schritte in der Liste (${items.length})`);
+  expect(items[0].classList.contains('st-open') && items.slice(1).every(li => li.classList.contains('st-locked')),
+         'am Anfang ist nur Schritt 1 frei');
+  // Gesperrte Schritte sind keine Kauffrage: kein PRO-Abzeichen (is-locked)
+  expect(!$$('#lp-steps .is-locked').length, 'gesperrte Schritte tragen kein PRO-Abzeichen');
+  expect(!$('#btn-lp-continue').hidden && $('#btn-lp-continue').textContent === 'Lernpfad beginnen', 'Knopf "Lernpfad beginnen"');
+  expect($('#lp-path-meta').textContent === '0 von 8 Schritten geschafft', `Fortschrittszeile ("${$('#lp-path-meta').textContent}")`);
+
+  // --- Schritt 1: Vermuten -------------------------------------------------
+  click('#btn-lp-continue'); await tick();
+  expect(lessonActive() && lesson().idx === 0 && lesson().phase === 'predict', 'Schritt 1 beginnt mit der Vermutung');
+  expect($('#lesson-stage').hidden, 'beim Vermuten ist der Graph noch verborgen');
+  expect($$('#lesson-phases li').length === 4 && $('#lesson-phases li.is-current')?.textContent === 'Vermuten', 'Ablaufleiste mit vier Phasen');
+  const step1 = LP.paths.quadratic.steps[0];
+  const wrongGuess = $$('#lesson-panel .quiz-opt').find(b =>
+    b.querySelector('.opt-text').textContent !== LP.core.txt(step1.predict.options[step1.predict.correct], step1.form));
+  click(wrongGuess); await tick();
+
+  // --- Entdecken: Auftraege beim Loslassen --------------------------------
+  expect(lesson().phase === 'explore' && !$('#lesson-stage').hidden, 'nach der Vermutung: Entdecken mit Graph');
+  expect($('.lp-guess')?.textContent.startsWith('Deine Vermutung'), 'die Vermutung steht ueber dem Graphen');
+  const trace = $('#lp-trace');
+  expect(trace, 'Schritt 1 hat einen x-Regler fuer den Punkt');
+  expect($$('#lesson-sliders .slider-row:not([hidden])').length === 1, 'nur der x-Regler ist sichtbar (keine Parameter)');
+  expect($$('.lp-missions li').length === 3 && $('.lp-missions li.is-current'), 'drei Auftraege, der erste ist dran');
+  click(act('hint')); await tick();
+  expect($('#lesson-feedback').textContent.includes('mit sich selbst'), 'Tipp zum ersten Auftrag erscheint');
+  // Ziehen ueber das Ziel hinweg (nur input) zaehlt nicht ...
+  trace.value = '2'; trace.dispatchEvent(new window.Event('input', { bubbles: true })); await tick();
+  expect(lesson().mission === 0, 'Vorbeiziehen am Ziel erledigt den Auftrag noch nicht');
+  // ... erst das Loslassen
+  trace.dispatchEvent(new window.Event('change', { bubbles: true })); await tick();
+  expect(lesson().mission === 1, 'Loslassen auf dem Ziel erledigt Auftrag 1');
+  trace.value = '2'; trace.dispatchEvent(new window.Event('change', { bubbles: true })); await tick();
+  expect(lesson().mission === 1, 'dieselbe Stelle zaehlt nicht als "zweite Stelle"');
+  trace.value = '-2'; trace.dispatchEvent(new window.Event('input', { bubbles: true }));
+  trace.dispatchEvent(new window.Event('change', { bubbles: true })); await tick();
+  expect(lesson().mission === 2, 'die gespiegelte Stelle erledigt Auftrag 2');
+  trace.value = '0'; trace.dispatchEvent(new window.Event('input', { bubbles: true }));
+  trace.dispatchEvent(new window.Event('change', { bubbles: true })); await tick();
+  expect(lesson().mission === 3 && act('to-rule'), 'alle Auftraege erledigt: weiter zum Merken');
+  expect($('#lesson-feedback').classList.contains('err') && $('#lesson-feedback').textContent.includes('Richtig ist'),
+         'falsche Vermutung wird am Ende aufgeloest');
+  expect($$('.lp-missions li.is-done').length === 3, 'drei Haken in der Liste');
+
+  // --- Merken -------------------------------------------------------------
+  click(act('to-rule')); await tick();
+  expect(lesson().phase === 'rule' && $$('.lp-rule li').length === 4, 'Merkkasten mit vier Saetzen');
+  expect($('#lesson-stage').hidden, 'beim Merken kein Graph');
+  click(act('to-explore')); await tick();
+  expect(lesson().phase === 'explore' && lesson().mission === 3, 'zurueck zum Entdecken behaelt die erledigten Auftraege');
+  click(act('to-rule')); await tick();
+
+  // --- Ueben: die erste Aufgabe erst falsch, dann richtig -------------------
+  click(act('to-practice')); await tick();
+  expect(lesson().phase === 'practice' && lesson().count === 5, 'Uebungsrunde mit fuenf Aufgaben');
+  expect($('.lp-progress')?.textContent.startsWith('Aufgabe 1 von 5'), 'Fortschritt der Runde wird angezeigt');
+  // Bei Wahr/Falsch gibt es keinen zweiten Versuch (wie im Quiz) - dort
+  // bleibt es bei der vollen Punktzahl, sonst wird es ein halber Punkt.
+  const first = lesson().task;
+  const retryable = !(first.type === 'choice' && first.options.length === 2);
+  await runPractice((i) => ({ right: true, wrongFirst: i === 0 }));
+  expect(lesson().phase === 'result' && lesson().result.passed && lesson().result.score === (retryable ? 4.5 : 5),
+         `zweiter Versuch zaehlt halb: ${retryable ? '4,5' : '5'} Punkte (${lesson().result?.score})`);
+  expect($('.lp-result.is-pass'), 'Ergebnis "geschafft" sichtbar');
+  expect(window.MFE.paths.core.loadStore().quadratic?.q1?.s === 'done', 'Schritt 1 ist gespeichert');
+  expect(window.MFE.quiz.loadProgress().quadratic?.n > 0, 'die Lernpfad-Aufgaben zaehlen im Stand der Klasse mit');
+
+  // --- Schritt 2 und Sprachwechsel mitten im Entdecken -----------------------
+  click(act('next-step')); await tick();
+  expect(lesson().idx === 1 && lesson().phase === 'predict', 'weiter zu Schritt 2');
+  click($$('#lesson-panel .quiz-opt')[0]); await tick();
+  expect($$('#lesson-sliders .slider-row:not([hidden])').length === 1 && $('#lp-val-e'),
+         'Schritt 2: nur der Regler fuer e ist sichtbar');
+  typeParam('e', 3); await tick();
+  expect(lesson().mission === 1, 'getippter Wert erledigt den Auftrag wie der Regler');
+  expect($('#lesson-eq').textContent.includes('x² + 3'), `Gleichung laeuft mit ("${$('#lesson-eq').textContent}")`);
+  click('#btn-lang-en'); await tick();
+  expect($('#lesson-title').textContent === 'Shifting up and down' && lesson().mission === 1,
+         'Sprachwechsel: Titel englisch, erledigte Auftraege bleiben');
+  expect($('#lp-val-e')?.value === '3', 'Sprachwechsel: der Regler behaelt seinen Wert');
+  click('#btn-lang-de'); await tick();
+
+  // --- Zurueck-Knopf -----------------------------------------------------------
+  window.history.back(); await tick(); await tick();
+  expect(learnActive(), 'Zurueck fuehrt vom Schritt in die Uebersicht');
+  items = $$('#lp-steps .lp-step');
+  expect(items[0].classList.contains('st-done') && items[1].classList.contains('st-open'), 'Uebersicht: 1 geschafft, 2 frei');
+  expect($('#lp-path-meta').textContent === '1 von 8 Schritten geschafft', 'Fortschrittszeile zaehlt mit');
+
+  // --- Test statt Lernen, nicht bestanden -> Rueckverweis ------------------------
+  click(items[3].querySelector('[data-act="test"]')); await tick();
+  expect(lessonActive() && lesson().mode === 'test' && lesson().phase === 'practice' && lesson().idx === 3,
+         'gesperrter Schritt 4: direkt zum Test');
+  expect($$('#lesson-phases li').length === 1, 'im Test nur eine Phase');
+  await runPractice({ right: false });
+  expect(lesson().phase === 'result' && !lesson().result.passed, 'alles falsch: Test nicht bestanden');
+  expect(window.MFE.paths.core.stepState('quadratic', 3) === 'locked', 'nicht bestandener Test schaltet nichts frei');
+  const remedyBtns = $$('#lesson-panel [data-act="remedy"]');
+  expect(lesson().remedies.length > 0 && remedyBtns.length === lesson().remedies.length,
+         `Fehler verweisen auf fruehere Schritte (${lesson().remedies.join(',')})`);
+  expect(lesson().remedies.every(i => i < 3), 'Rueckverweise zeigen nur nach vorn im Pfad, nicht auf spaeter');
+  expect(act('learn') && act('again'), 'nach dem Test: noch einmal oder den Schritt lernen');
+  if (remedyBtns[0]) {
+    const target = Math.min(...lesson().remedies);     // Knoepfe stehen aufsteigend
+    click(remedyBtns[0]); await tick();
+    expect(lesson().idx === target && lesson().mode === 'learn' && lesson().phase === 'predict', 'Rueckverweis oeffnet den Schritt zum Lernen');
+  }
+
+  // --- Test bestanden -> Schritte davor uebersprungen ------------------------------
+  click('#btn-lesson-back'); await tick();
+  expect(learnActive(), '"Zur Uebersicht" fuehrt in die Uebersicht');
+  click($$('#lp-steps .lp-step')[4].querySelector('[data-act="test"]')); await tick();
+  await runPractice({ right: true });
+  expect(lesson().result?.passed && lesson().result.score === 5, 'Test in Schritt 5 mit 5 Punkten bestanden');
+  click(act('overview')); await tick();
+  items = $$('#lp-steps .lp-step');
+  expect(['st-done', 'st-skipped', 'st-skipped', 'st-skipped', 'st-done', 'st-open', 'st-locked', 'st-locked']
+         .every((c, i) => items[i].classList.contains(c)), 'nach dem Test: 2-4 uebersprungen, 5 geschafft, 6 frei');
+  expect(items[1].querySelector('.quiz-meta').textContent === 'per Test übersprungen', 'Zustand steht im Klartext da');
+
+  // --- Letzter Schritt: Pfad abgeschlossen -----------------------------------------
+  click(items[7].querySelector('[data-act="test"]')); await tick();
+  await runPractice({ right: true });
+  expect(lesson().result?.passed && $('.lp-done'), 'letzter Schritt: "Lernpfad geschafft"');
+  expect(!act('next-step') && act('overview'), 'nach dem letzten Schritt kein "Weiter zu Schritt 9"');
+  click(act('overview')); await tick();
+  // Ein bestandener Test auf dem letzten Schritt ist eine Einstufung: alles
+  // davor gilt als uebersprungen, der Pfad als abgeschlossen.
+  expect(window.MFE.paths.core.countPassed('quadratic') === 8 && $('#btn-lp-continue').hidden && !$('#lp-all-done').hidden,
+         'Test im letzten Schritt bestanden: Pfad abgeschlossen, kein "Weiterlernen" mehr');
+  expect($$('#lp-steps .lp-step.st-skipped').length === 5, `davor uebersprungen: 2-4 sowie 6 und 7 (${$$('#lp-steps .lp-step.st-skipped').length})`);
+
+  // --- Englische Uebersicht, Zuruecksetzen --------------------------------------------
+  click('#btn-lang-en'); await tick();
+  expect($('#lp-path-title').textContent === window.MFE.i18n.t('cat.quadratic') && window.MFE.i18n.lang === 'en',
+         `Uebersicht auf Englisch ("${$('#lp-path-title').textContent}")`);
+  expect($$('#lp-steps h3')[0].textContent === '1. The basic parabola', 'Schritttitel auf Englisch');
+  click('#btn-lang-de'); await tick();
+  click('#btn-lp-reset'); await tick();
+  items = $$('#lp-steps .lp-step');
+  expect(items[0].classList.contains('st-open') && items[1].classList.contains('st-locked'), 'Zuruecksetzen: wieder am Anfang');
+  expect($('#lp-path-meta').textContent === '0 von 8 Schritten geschafft', 'Zuruecksetzen: Zaehler auf 0');
+
+  // --- Jeden Schritt einmal durchspielen: Vermutung, Auftraege, Merken, Ueben ----------
+  // Die Auftraege werden mit der Loesung aus dem Rasterdurchlauf erfuellt -
+  // so ist jeder Auftrag jedes Schritts einmal ueber die Oberflaeche gelaufen.
+  for (let si = 0; si < 8; si++) {
+    LP.openLesson('quadratic', si, 'learn'); await tick();
+    const step = LP.paths.quadratic.steps[si];
+    click($$('#lesson-panel .quiz-opt')[0]); await tick();
+    const d = window.MFE.math.FUNCTIONS[step.form];
+    const axes = step.free.map(id => { const p = d.params.find(q => q.id === id); const out = [];
+      for (let k = 0; k <= Math.round((p.max - p.min) / p.step); k++) out.push(Math.round((p.min + k * p.step) * 1e4) / 1e4);
+      return out; });
+    const xs = step.trace ? [-3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3] : [null];
+    let guard = 0;
+    // Solange Auftraege offen sind: Loesung fuer den AKTUELLEN suchen. Ein
+    // Zwischenstand beim Tippen kann einen Auftrag schon vorher erfuellen -
+    // dann geht es einfach mit dem naechsten weiter.
+    while (lesson().mission < step.missions.length && guard++ < 10) {
+      const m = step.missions[lesson().mission];
+      const memo = lesson().memo;
+      const base = { ...Object.fromEntries(d.params.map(p => [p.id, p.value])), ...step.start };
+      let sol = null;
+      const rec = (i, v) => {
+        if (sol) return;
+        if (i === axes.length) {
+          for (const x of xs) {
+            const st = { v: { ...v }, x, y: x == null ? NaN : d.f(x, v), f: (xx) => d.f(xx, v) };
+            if (m.check(st, memo)) { sol = st; return; }
+          }
+          return;
+        }
+        for (const a of axes[i]) { v[step.free[i]] = a; rec(i + 1, v); if (sol) return; }
+      };
+      rec(0, { ...base });
+      if (!sol) { errors.push(`Schritt ${si + 1}, Auftrag ${lesson().mission + 1}: keine Loesung gefunden`); break; }
+      for (const id of step.free) typeParam(id, sol.v[id]);
+      if (step.trace) {
+        const tr = $('#lp-trace');
+        tr.value = String(sol.x); tr.dispatchEvent(new window.Event('input', { bubbles: true }));
+        tr.dispatchEvent(new window.Event('change', { bubbles: true }));
+      }
+      await tick();
+    }
+    expect(lesson().mission === step.missions.length, `Schritt ${si + 1}: alle Auftraege ueber die Oberflaeche erledigt (${lesson().mission}/${step.missions.length})`);
+    click(act('to-rule')); await tick();
+    click(act('to-practice')); await tick();
+    await runPractice({ right: true });
+    expect(lesson().result?.passed, `Schritt ${si + 1}: Uebungsrunde bestanden`);
+  }
+  click(act('overview')); await tick();
+  expect(!$('#lp-all-done').hidden && $('#btn-lp-continue').hidden, 'alle acht Schritte geschafft: Abschlussmeldung');
+  expect(!errors.some(e => e.includes('console.error')), 'kein Fehler in der Konsole waehrend der Lernpfade');
+  window.localStorage.removeItem('mfe:paths');
+  click('#btn-home'); await tick();
+}
+
 /* ---- In-App-Kauf (nur iOS-App) -------------------------------------------
    Nachgebautes Plugin mit derselben Schnittstelle wie
    plugins-src/cordova-plugin-mfe-store/www/mfe-store.js. */
@@ -1500,6 +1780,14 @@ if (LITE) {
          === 'linear,quadratic,exponential,trig,btn-more-fns', 'nach dem Kauf unveraenderte Reihenfolge');
   click('.fn-card[data-category="quadratic"]'); await tick();
   expect($('#screen-app').classList.contains('is-active') && !$('#pro-dialog').open, 'quadratische Funktion jetzt erreichbar');
+  click('#btn-home'); await tick();
+  expect(!$('#card-learn').classList.contains('is-locked'), 'nach dem Kauf: Lernpfade ohne Pro-Abzeichen');
+  click('#card-learn'); await tick();
+  expect($('#screen-learn').classList.contains('is-active') && !$('#pro-dialog').open, 'nach dem Kauf: Lernpfade oeffnen sich');
+  click($$('#lp-steps [data-act="open"]')[0]); await tick();
+  expect($('#screen-lesson').classList.contains('is-active') && window.MFE.paths.lesson.phase === 'predict',
+         'nach dem Kauf: Schritt 1 startet');
+  click('#btn-home'); await tick();
 
   // Erstattung: StoreKit meldet "nicht mehr gekauft" ueber watch()
   storeOwned = false;
