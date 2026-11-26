@@ -29,7 +29,7 @@ const BEAMER_SCALE = 1.55;
    prueft, dass beide uebereinstimmen. Damit laesst sich an der App ablesen,
    welcher Stand tatsaechlich installiert ist - bisher liess sich das nur
    raten. */
-const APP_VERSION = '7.2.0';
+const APP_VERSION = '7.4.0';
 
 /** Voreinstellungen fuer den Ausschnitt. "Wachstum" ist der Fall, der vorher
  *  gar nicht darstellbar war: die App erklaert a = 100 bei einer
@@ -2096,7 +2096,8 @@ async function shareLink() {
    14 · KOSTENLOSE VERSION / PRO (IN-APP-KAUF)
    ========================================================================== */
 function proHint(kind) {
-  const key = kind === 'cat' ? 'msg.proCat' : kind === 'calculus' ? 'msg.needCalculus' : 'msg.pro';
+  const key = kind === 'cat' ? 'msg.proCat' : kind === 'calculus' ? 'msg.needCalculus'
+            : kind === 'path' ? 'msg.proPath' : 'msg.pro';
   toast(t(key));
   paintBuyButtons();
   MFE.nav.openDialog($('#pro-dialog'));
@@ -2411,6 +2412,7 @@ function applyScreen(which) {
   if (which === 'home') { renderPracticeCard(); requestAnimationFrame(drawThumbs); }
   if (which === 'info') renderInfo();
   // Lernpfade zeichnen selbst - auch beim Zurueck-Knopf, der nur applyScreen ruft.
+  MFE.paths.onScreen(which);
   if (which === 'learn' || which === 'lesson') MFE.paths.onShow(which);
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
@@ -2530,9 +2532,10 @@ function bindEvents() {
     setMoreOpen($('#more-fns').hidden, { scroll: true });
   });
   $('#card-practice').addEventListener('click', () => showScreen('app', 'quiz'));
+  // Die Uebersicht ist immer offen - gesperrt sind einzelne Schritte (paths.js).
   $('#card-learn').addEventListener('click', () => {
-    if (!licence.has('learnPaths')) { proHint(); return; }
-    MFE.paths.openOverview();
+    // Mit der Klasse beginnen, die zuletzt im Explorer offen war.
+    MFE.paths.openOverview(FUNCTIONS[curve(0).form]?.category);
   });
 
   $('#btn-table-toggle').addEventListener('click', toggleTable);
@@ -2890,6 +2893,7 @@ function bindEvents() {
     markProFeatures();
     updateExplorer();
     renderInfo();
+    MFE.paths.relabel();      // Pro-Abzeichen an den Lernpfad-Schritten
     if (e.detail?.owned) {
       $('#pro-dialog').open && $('#pro-dialog').close('cancel');
       toast(t('msg.proUnlocked'));
@@ -3045,7 +3049,7 @@ function init() {
     showScreen,
     symbolOf,
     scale: sceneScale,
-    proHint: () => proHint()
+    proHint: (kind) => proHint(kind)
   });
 
   MFE.nav.init({
@@ -3080,6 +3084,9 @@ function init() {
   if (quizCode) {
     if (!licence.has('quizBuilder')) proHint();
     else MFE.quiz.importFromHash(quizCode);
+  } else if (!fromLink && MFE.paths.resumeOnStart()) {
+    // Die App wurde mitten in einem Lernpfad-Schritt beendet (iOS raeumt
+    // Apps im Hintergrund ohne Vorwarnung ab). Dort geht es weiter.
   } else if (fromLink) {
     showScreen('app', 'explorer');
   } else if (session?.inApp) {

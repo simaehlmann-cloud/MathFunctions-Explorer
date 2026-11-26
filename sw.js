@@ -18,7 +18,7 @@
    Auslieferung einen eigenen Zwischenspeicher, und der alte wird beim
    Aktivieren geloescht (siehe unten). Bleibt sie stehen - beim direkten
    Ausliefern des Quelltextes -, zaehlt die Versionsnummer. */
-const CACHE = 'mfe-v7.2.0-__BUILD__';
+const CACHE = 'mfe-v7.4.0-__BUILD__';
 const ASSETS = [
   './',
   './index.html',
@@ -39,7 +39,10 @@ const ASSETS = [
   './js/qr.js',
   './js/quiz.js',
   './js/paths.js',
+  './js/paths-linear.js',
   './js/paths-quadratic.js',
+  './js/paths-exponential.js',
+  './js/paths-trig.js',
   './js/app.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

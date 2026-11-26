@@ -164,7 +164,8 @@ try {
 
 const files = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
                'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js',
-               'js/paths.js', 'js/paths-quadratic.js', 'js/app.js'];
+               'js/paths.js', 'js/paths-linear.js', 'js/paths-quadratic.js',
+               'js/paths-exponential.js', 'js/paths-trig.js', 'js/app.js'];
 for (const f of files) {
   let src = readFileSync(path.join(ROOT, f), 'utf8');
   try { window.eval(src); }
@@ -1166,11 +1167,11 @@ if (LITE) {
   const cards = $$('.fn-card[data-feature]');
   const catCards = cards.filter(c => c.dataset.category);
   expect(catCards.length === 7, `sieben gesperrte Funktionsklassen (${catCards.length})`);
-  expect(cards.length === 9, `dazu Quiz-Baukasten und Lernpfade, also neun Sperren insgesamt (${cards.length})`);
+  expect(cards.length === 8, `dazu der Quiz-Baukasten, also acht Sperren insgesamt (${cards.length})`);
   expect(cards.every(c => c.classList.contains('is-locked')), 'alle gesperrten Karten tragen die Kennzeichnung');
   expect(cards.every(c => c.getAttribute('aria-disabled') === 'true'), 'und sind als gesperrt ausgezeichnet');
-  expect($$('.fn-card:not([data-feature])').length === 5,
-         'frei bleiben zwei Funktionsklassen, "Weitere", Ueben und die Info-Karte');
+  expect($$('.fn-card:not([data-feature])').length === 6,
+         'frei bleiben zwei Funktionsklassen, "Weitere", Lernpfade (Kostprobe), Ueben und die Info-Karte');
 } else {
   expect(!groups.some(g => g.label.includes('PRO')), 'Pro: keine Klasse ist gekennzeichnet');
   // Klassenwechsel direkt aus dem Explorer heraus
@@ -1498,8 +1499,9 @@ async function answer({ right = true, wrongFirst = false } = {}) {
 }
 
 async function runPractice(opts) {
+  // Ab der aktuellen Aufgabe bis zum Ende - nach dem Fortsetzen ist das nicht Aufgabe 1.
   const n = lesson().count;
-  for (let i = 0; i < n; i++) {
+  for (let i = lesson().ti; i < n && lesson().phase === 'practice'; i++) {
     await answer(typeof opts === 'function' ? opts(i) : opts);
     expect(act('next'), `Aufgabe ${i + 1}: nach der Antwort gibt es "Weiter"`);
     click(act('next')); await tick();
@@ -1507,25 +1509,78 @@ async function runPractice(opts) {
 }
 
 if (LITE) {
+  /* Kostprobe ohne Kauf: der lineare Pfad ganz, von allen anderen Schritt 1.
+     Gesperrte Schritte tragen das PRO-Abzeichen und oeffnen den Kauf-Dialog -
+     auch dann, wenn sie direkt ueber die Schnittstelle aufgerufen werden. */
+  const closePro = async () => { if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); } };
+  window.localStorage.removeItem('mfe:paths');
   click('#btn-home'); await tick();
-  expect($('#card-learn').classList.contains('is-locked'), 'iOS ohne Kauf: Lernpfade tragen das Pro-Abzeichen');
+  expect(!$('#card-learn').classList.contains('is-locked'), 'iOS ohne Kauf: die Lernpfad-Karte ist frei (Kostprobe)');
   click('#card-learn'); await tick();
-  expect($('#pro-dialog').open, 'iOS ohne Kauf: Lernpfade oeffnen den Kauf-Dialog');
-  expect(!learnActive(), 'iOS ohne Kauf: die Uebersicht bleibt zu');
-  if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
-  LP.openLesson('quadratic', 0);
-  await tick();
-  expect(!lessonActive(), 'iOS ohne Kauf: auch der direkte Aufruf eines Schritts ist gesperrt');
-  if ($('#pro-dialog').open) { $('#pro-dialog').close('cancel'); await tick(); await tick(); }
+  expect(learnActive() && !$('#pro-dialog').open, 'iOS ohne Kauf: die Uebersicht oeffnet sich');
+  for (const pid of ['linear', 'quadratic', 'exponential', 'trig']) {
+    click($(`#lp-classes [data-path="${pid}"]`)); await tick();
+    const btns = $$('#lp-steps .lp-step-acts button');
+    const locked = btns.map(b => b.classList.contains('is-locked'));
+    const want = btns.map((_, i) => pid !== 'linear' && i > 0);
+    expect(locked.join() === want.join(), `${pid}: PRO-Abzeichen genau an den Schritten ohne Kostprobe (${locked.map(Number).join('')})`);
+  }
+  // Schritt 2 der quadratischen Funktionen: Kauf-Dialog, keine Lektion
+  click($('#lp-classes [data-path="quadratic"]')); await tick();
+  click($$('#lp-steps .lp-step-acts button')[1]); await tick();
+  expect($('#pro-dialog').open && !lessonActive(), 'iOS ohne Kauf: Pro-Schritt oeffnet den Kauf-Dialog');
+  expect($('#toast').textContent.includes('Lernpfad zu linearen Funktionen'), 'und sagt, was kostenlos ist');
+  await closePro();
+  LP.openLesson('trig', 3, 'test'); await tick();
+  expect(!lessonActive() && $('#pro-dialog').open, 'iOS ohne Kauf: auch der direkte Aufruf eines Pro-Schritts ist gesperrt');
+  await closePro();
+  // Schritt 1 jeder Klasse und der ganze lineare Pfad: frei
+  for (const [pid, i] of [['quadratic', 0], ['exponential', 0], ['trig', 0], ['linear', 0], ['linear', 3], ['linear', 5]]) {
+    LP.openLesson(pid, i, 'learn'); await tick();
+    expect(lessonActive() && lesson().pid === pid && lesson().idx === i && !$('#pro-dialog').open,
+           `iOS ohne Kauf: ${pid} Schritt ${i + 1} ist frei`);
+    await closePro();
+  }
+  // Schritt 1 bestehen -> "Weiter zu Schritt 2" traegt PRO und oeffnet den Kauf-Dialog
+  LP.openLesson('quadratic', 0, 'test'); await tick();
+  await runPractice({ right: true });
+  expect(lesson().result?.passed && act('next-step')?.classList.contains('is-locked'),
+         'nach Schritt 1: "Weiter zu Schritt 2" traegt das PRO-Abzeichen');
+  click(act('next-step')); await tick();
+  expect($('#pro-dialog').open && lesson().idx === 0, 'und oeffnet den Kauf-Dialog statt Schritt 2');
+  await closePro();
+  click(act('overview')); await tick();
+  expect($('#btn-lp-continue').classList.contains('is-locked'), '"Weiterlernen" zu einem Pro-Schritt traegt das Abzeichen');
+  // Ein gesicherter Stand fuer einen Pro-Schritt wird ohne Kauf weder angeboten noch fortgesetzt.
+  {
+    const proSnap = { rev: 1, at: Date.now(), open: true, pid: 'quadratic', idx: 1, mode: 'learn', phase: 'explore',
+                      guess: 0, predictOrder: [0, 1, 2, 3], values: { a: 1, d: 0, e: 2 }, traceX: null, memo: {},
+                      mission: 1, trail: [] };
+    expect(!!LP.core.sanitizeLesson(proSnap), 'der Pro-Stand selbst ist gueltig');
+    window.localStorage.setItem('mfe:lesson', JSON.stringify(proSnap));
+    click('#btn-home'); await tick(); click('#card-learn'); await tick();
+    expect($('#lp-resume').hidden, 'iOS ohne Kauf: unterbrochener Pro-Schritt wird nicht angeboten');
+    expect(!LP.resumeOnStart() && !lessonActive(), 'iOS ohne Kauf: und beim Start nicht fortgesetzt');
+    window.localStorage.removeItem('mfe:lesson');
+  }
+  window.localStorage.removeItem('mfe:paths');
+  click('#btn-home'); await tick();
 } else {
   window.localStorage.removeItem('mfe:paths');
   click('#btn-home'); await tick();
   expect(!$('#card-learn').classList.contains('is-locked'), 'Lernpfade sind im Browser frei');
+  // Die Uebersicht oeffnet mit der Klasse, die im Explorer zuletzt offen war.
+  const explorerCat = window.MFE.math.FUNCTIONS[$('#function-form').value]?.category;
   click('#card-learn'); await tick();
   expect(learnActive(), 'Lernpfade: Uebersicht geoeffnet');
+  expect($('#lp-classes .seg-btn.is-active')?.dataset.path === explorerCat,
+         `Uebersicht beginnt mit der Klasse aus dem Explorer (${$('#lp-classes .seg-btn.is-active')?.dataset.path})`);
+  click($('#lp-classes [data-path="quadratic"]')); await tick();
+  expect($('#lp-classes .seg-btn.is-active')?.dataset.path === 'quadratic', 'Klassenwahl: quadratisch');
   const segs = $$('#lp-classes .seg-btn');
   expect(segs.length === 4, `vier Klassen in der Auswahl (${segs.length})`);
-  expect(segs.filter(b => !b.disabled).map(b => b.dataset.path).join() === 'quadratic', 'nur die quadratischen Funktionen sind schon da');
+  expect(segs.filter(b => !b.disabled).map(b => b.dataset.path).join() === 'linear,quadratic,exponential,trig',
+         'alle vier Klassen haben einen Lernpfad');
   let items = $$('#lp-steps .lp-step');
   expect(items.length === 8, `acht Schritte in der Liste (${items.length})`);
   expect(items[0].classList.contains('st-open') && items.slice(1).every(li => li.classList.contains('st-locked')),
@@ -1660,6 +1715,32 @@ if (LITE) {
          'Test im letzten Schritt bestanden: Pfad abgeschlossen, kein "Weiterlernen" mehr');
   expect($$('#lp-steps .lp-step.st-skipped').length === 5, `davor uebersprungen: 2-4 sowie 6 und 7 (${$$('#lp-steps .lp-step.st-skipped').length})`);
 
+  // --- Ergebnis fuer die Lehrkraft: Code zeigen und in der App pruefen -----------------
+  {
+    expect(!$('#btn-lp-code').disabled, 'mit Fortschritt: "Ergebnis fuer die Lehrkraft" ist bedienbar');
+    click('#btn-lp-code'); await tick(); await tick();
+    const code = $('#lp-code').textContent;
+    expect($('#lp-code-dialog').open && /^Q-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]$/.test(code), `Dialog zeigt den Code (${code})`);
+    expect($('#lp-code-summary').textContent.startsWith('Quadratische') && $('#lp-code-summary').textContent.includes('8 von 8')
+           && $('#lp-code-summary').textContent.includes('5 per Test'), `Zusammenfassung im Dialog ("${$('#lp-code-summary').textContent}")`);
+    expect($('#lp-code-dialog').dataset.text.includes(code), 'Kopier- und QR-Text enthaelt den Code');
+    click('#btn-lp-code-close'); await tick();
+    expect(!$('#lp-code-dialog').open, 'Dialog laesst sich schliessen');
+    // Die Lehrkraft tippt den Code ab - klein, mit Leerzeichen
+    $('#lp-check-input').value = code.toLowerCase().replace(/-/g, ' ');
+    click('#btn-lp-check'); await tick();
+    const out = $('#lp-check-out').textContent;
+    expect($('#lp-check-out').classList.contains('ok') && out.includes('8 von 8') && out.includes('Schritt 1, 5, 8')
+           && out.includes('übersprungen: 2, 3, 4, 6, 7'), `Pruefen entschluesselt den Code ("${out}")`);
+    // Ein vertippter Buchstabe
+    const last = code.at(-1);
+    $('#lp-check-input').value = code.slice(0, -1) + (last === 'A' ? 'B' : 'A');
+    $('#lp-check-input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick();
+    expect($('#lp-check-out').classList.contains('err') && $('#lp-check-out').textContent.includes('ungültig'),
+           'Enter prueft auch; ein Tippfehler wird als ungueltig gemeldet');
+    expect(!$('#lp-check-out').innerHTML.includes('<'), 'Ausgabe ist reiner Text');
+  }
+
   // --- Englische Uebersicht, Zuruecksetzen --------------------------------------------
   click('#btn-lang-en'); await tick();
   expect($('#lp-path-title').textContent === window.MFE.i18n.t('cat.quadratic') && window.MFE.i18n.lang === 'en',
@@ -1670,19 +1751,113 @@ if (LITE) {
   items = $$('#lp-steps .lp-step');
   expect(items[0].classList.contains('st-open') && items[1].classList.contains('st-locked'), 'Zuruecksetzen: wieder am Anfang');
   expect($('#lp-path-meta').textContent === '0 von 8 Schritten geschafft', 'Zuruecksetzen: Zaehler auf 0');
+  expect($('#btn-lp-code').disabled, 'ohne Fortschritt kein Ergebniscode');
+
+  // --- Unterbrochene Schritte fortsetzen ---------------------------------------------
+  {
+    const stored = () => { try { return JSON.parse(window.localStorage.getItem('mfe:lesson')); } catch { return null; } };
+    const flush = () => LP.core.saveLessonNow();
+    window.localStorage.removeItem('mfe:lesson');
+    // Entdecken unterbrechen
+    LP.openLesson('quadratic', 2, 'learn'); await tick();
+    click($$('#lesson-panel .quiz-opt')[2]); await tick();
+    const guess = lesson().guess;
+    typeParam('d', 3); await tick();
+    expect(lesson().mission === 1, 'Fortsetzen: Auftrag 1 im Entdecken erledigt');
+    flush();
+    expect(stored()?.open === true && stored()?.mission === 1, 'waehrend des Schritts gilt er als offen und gesichert');
+    click('#btn-home'); await tick();
+    expect(stored()?.open === false, 'wer den Schritt selbst verlaesst, schliesst ihn (kein Autostart)');
+    click('#card-learn'); await tick();
+    expect(!$('#lp-resume').hidden && $('#lp-resume-text').textContent.includes('Schritt 3'),
+           `Uebersicht bietet das Fortsetzen an ("${$('#lp-resume-text').textContent}")`);
+    click('#btn-lp-resume'); await tick();
+    expect(lessonActive() && lesson().idx === 2 && lesson().phase === 'explore' && lesson().mission === 1 && lesson().guess === guess,
+           'Fortsetzen: gleicher Schritt, gleicher Auftrag, gleiche Vermutung');
+    expect($('#lp-val-d')?.value === '3', `Fortsetzen: der Regler steht wieder auf 3 (${$('#lp-val-d')?.value})`);
+    // Ueben unterbrechen, mitten in einer Aufgabe
+    for (const v of [-2, 2]) { typeParam('d', v); await tick(); }
+    typeParam('d', -2); await tick();
+    click(act('to-rule')); await tick();
+    click(act('to-practice')); await tick();
+    await answer({ right: true }); click(act('next')); await tick();
+    await answer({ right: true, wrongFirst: true }); click(act('next')); await tick();
+    const before = { ti: lesson().ti, score: lesson().score, q: JSON.stringify(lesson().task.q) };
+    let typed = null;
+    if (lesson().task.type === 'input') {
+      const f = $('#lesson-panel input[type="text"]');
+      f.value = '7,25'; f.dispatchEvent(new window.Event('input', { bubbles: true })); typed = '7,25';
+    }
+    flush();
+    // App "abgeschossen": der Stand ist noch offen, beim Start geht es direkt hinein
+    const snap = stored();
+    click('#btn-home'); await tick();
+    snap.open = true; window.localStorage.setItem('mfe:lesson', JSON.stringify(snap));
+    expect(LP.resumeOnStart() && lessonActive(), 'App-Start nach Abbruch: direkt zurueck in den Schritt');
+    expect(lesson().ti === before.ti && lesson().score === before.score && JSON.stringify(lesson().task.q) === before.q,
+           `Fortsetzen: gleiche Aufgabe und Punkte (${lesson().ti}/${lesson().score})`);
+    if (typed) expect($('#lesson-panel input[type="text"]').value === typed, 'Fortsetzen: der halb getippte Wert ist noch da');
+    // Runde zu Ende: nichts mehr fortzusetzen
+    await runPractice({ right: true });
+    expect(lesson().phase === 'result' && stored() === null, 'nach der Auswertung gibt es nichts mehr fortzusetzen');
+    click(act('overview')); await tick();
+    expect($('#lp-resume').hidden, 'und die Uebersicht bietet nichts an');
+    // Verwerfen
+    LP.openLesson('linear', 1, 'learn'); await tick();
+    click('#btn-home'); await tick();
+    click('#card-learn'); await tick();
+    expect(!$('#lp-resume').hidden, 'neuer unterbrochener Schritt wird angeboten');
+    click('#btn-lp-discard'); await tick();
+    expect($('#lp-resume').hidden && stored() === null, 'Verwerfen loescht den Stand');
+    // Manipulierter Speicher: kein Angebot, kein Absturz, frischer Start
+    for (const junk of ['kein json', '{"rev":1,"at":1}', JSON.stringify({ ...snap, tasks: [{ type: 'choice', q: '<b>x</b>' }] }),
+                        JSON.stringify({ ...snap, values: { a: 'alert(1)' } })]) {
+      window.localStorage.setItem('mfe:lesson', junk);
+      click('#btn-home'); await tick(); click('#card-learn'); await tick();
+      expect($('#lp-resume').hidden, `manipulierter Stand wird nicht angeboten (${junk.slice(0, 20)})`);
+      expect(!LP.resumeOnStart(), 'und beim Start nicht fortgesetzt');
+    }
+    LP.openLesson('quadratic', 2, 'learn'); await tick();
+    expect(lesson().phase === 'predict', 'nach manipuliertem Stand beginnt der Schritt frisch');
+    window.localStorage.removeItem('mfe:lesson');
+  }
+
+  // --- Einrasten auf pi-Werte (Sinus, Verschiebung c) --------------------------------
+  {
+    LP.openLesson('trig', 3, 'learn'); await tick();
+    click($$('#lesson-panel .quiz-opt')[0]); await tick();
+    const sl = $('#lp-slider-c');
+    sl.value = '1.6'; sl.dispatchEvent(new window.Event('input', { bubbles: true })); await tick();
+    const field = $('#lp-val-c');
+    expect(field.value === '\u03c0/2', `Regler bei 1,6 rastet auf pi/2 ein und zeigt "pi/2" (${field.value})`);
+    expect($('#lesson-eq').textContent.includes('x \u2212 \u03c0/2'), `Gleichung zeigt x - pi/2 (${$('#lesson-eq').textContent})`);
+    sl.value = '1.5'; sl.dispatchEvent(new window.Event('input', { bubbles: true })); await tick();
+    expect(field.value === '1,5', `1,5 bleibt 1,5 - halbe Zahlen liegen naeher (${field.value})`);
+    field.value = '-pi/4'; field.dispatchEvent(new window.Event('change', { bubbles: true })); await tick();
+    expect(field.value === '\u2212\u03c0/4', `getippt "-pi/4" erscheint als -pi/4 (${field.value})`);
+    sl.value = '0.8'; sl.dispatchEvent(new window.Event('input', { bubbles: true })); await tick();
+    expect(field.value === '\u03c0/4', `0,8 rastet auf pi/4 (${field.value})`);
+    window.localStorage.removeItem('mfe:lesson');
+  }
 
   // --- Jeden Schritt einmal durchspielen: Vermutung, Auftraege, Merken, Ueben ----------
   // Die Auftraege werden mit der Loesung aus dem Rasterdurchlauf erfuellt -
   // so ist jeder Auftrag jedes Schritts einmal ueber die Oberflaeche gelaufen.
-  for (let si = 0; si < 8; si++) {
-    LP.openLesson('quadratic', si, 'learn'); await tick();
-    const step = LP.paths.quadratic.steps[si];
+  const playAll = async (pid) => {
+  const n = LP.paths[pid].steps.length;
+  for (let si = 0; si < n; si++) {
+    LP.openLesson(pid, si, 'learn'); await tick();
+    const step = LP.paths[pid].steps[si];
     click($$('#lesson-panel .quiz-opt')[0]); await tick();
     const d = window.MFE.math.FUNCTIONS[step.form];
     const axes = step.free.map(id => { const p = d.params.find(q => q.id === id); const out = [];
       for (let k = 0; k <= Math.round((p.max - p.min) / p.step); k++) out.push(Math.round((p.min + k * p.step) * 1e4) / 1e4);
       return out; });
-    const xs = step.trace ? [-3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3] : [null];
+    // x-Werte des Punktreglers aus seinem eigenen Raster (Parabel: 0,5; Sinus: pi/12)
+    const xs = step.trace
+      ? Array.from({ length: Math.round((step.trace.max - step.trace.min) / step.trace.step) + 1 },
+                   (_, k) => step.trace.min + k * step.trace.step)
+      : [null];
     let guard = 0;
     // Solange Auftraege offen sind: Loesung fuer den AKTUELLEN suchen. Ein
     // Zwischenstand beim Tippen kann einen Auftrag schon vorher erfuellen -
@@ -1717,10 +1892,19 @@ if (LITE) {
     click(act('to-rule')); await tick();
     click(act('to-practice')); await tick();
     await runPractice({ right: true });
-    expect(lesson().result?.passed, `Schritt ${si + 1}: Uebungsrunde bestanden`);
+    expect(lesson().result?.passed, `${pid} Schritt ${si + 1}: Uebungsrunde bestanden`);
   }
   click(act('overview')); await tick();
-  expect(!$('#lp-all-done').hidden && $('#btn-lp-continue').hidden, 'alle acht Schritte geschafft: Abschlussmeldung');
+  expect($('#lp-classes .seg-btn.is-active')?.dataset.path === pid, `${pid}: die Uebersicht zeigt den gerade gelernten Pfad`);
+  expect(!$('#lp-all-done').hidden && $('#btn-lp-continue').hidden, `${pid}: alle ${n} Schritte geschafft, Abschlussmeldung`);
+  };
+  for (const pid of ['quadratic', 'linear', 'exponential', 'trig']) await playAll(pid);
+  // Der Fortschritt eines Pfades beruehrt die anderen nicht.
+  click($('#lp-classes [data-path="linear"]')); await tick();
+  expect($('#lp-path-meta').textContent === '6 von 6 Schritten geschafft', `linear: eigener Zaehler (${$('#lp-path-meta').textContent})`);
+  click('#btn-lp-reset'); await tick();
+  expect(LP.core.countPassed('linear') === 0 && LP.core.countPassed('trig') === 6,
+         'Zuruecksetzen betrifft nur den gewaehlten Pfad');
   expect(!errors.some(e => e.includes('console.error')), 'kein Fehler in der Konsole waehrend der Lernpfade');
   window.localStorage.removeItem('mfe:paths');
   click('#btn-home'); await tick();
@@ -1784,6 +1968,11 @@ if (LITE) {
   expect(!$('#card-learn').classList.contains('is-locked'), 'nach dem Kauf: Lernpfade ohne Pro-Abzeichen');
   click('#card-learn'); await tick();
   expect($('#screen-learn').classList.contains('is-active') && !$('#pro-dialog').open, 'nach dem Kauf: Lernpfade oeffnen sich');
+  click($('#lp-classes [data-path="trig"]')); await tick();
+  expect(!$$('#lp-steps .is-locked').length, 'nach dem Kauf: kein Schritt traegt mehr PRO');
+  LP.openLesson('trig', 5, 'test'); await tick();
+  expect($('#screen-lesson').classList.contains('is-active') && !$('#pro-dialog').open, 'nach dem Kauf: auch der letzte Sinus-Schritt oeffnet sich');
+  click('#btn-lesson-back'); await tick();
   click($$('#lp-steps [data-act="open"]')[0]); await tick();
   expect($('#screen-lesson').classList.contains('is-active') && window.MFE.paths.lesson.phase === 'predict',
          'nach dem Kauf: Schritt 1 startet');

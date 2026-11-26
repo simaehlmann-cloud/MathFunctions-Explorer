@@ -38,7 +38,8 @@ const { window } = dom;
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 
 for (const f of ['js/licence.js', 'js/i18n.js', 'js/functions.js', 'js/graph.js', 'js/diagnose.js',
-                 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/paths.js', 'js/paths-quadratic.js']) {
+                 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js', 'js/paths.js', 'js/paths-linear.js',
+                 'js/paths-quadratic.js', 'js/paths-exponential.js', 'js/paths-trig.js']) {
   try { window.eval(read(f)); } catch (e) { errors.push(`${f}: ${e.message}`); }
 }
 
@@ -72,7 +73,8 @@ function dictKeys(name, next) {
 const de = dictKeys('de', 'en');
 const en = dictKeys('en', null);
 
-const src = read('js/paths.js') + '\n' + read('js/paths-quadratic.js');
+const src = ['js/paths.js', 'js/paths-linear.js', 'js/paths-quadratic.js', 'js/paths-exponential.js', 'js/paths-trig.js']
+  .map(read).join('\n');
 const literalKeys = new Set([...src.matchAll(/'((?:lp|home|info|cat|quiz|btn)\.[\w.]+)'/g)].map(m => m[1]));
 // Zur Laufzeit zusammengesetzte Schluessel ausdruecklich aufzaehlen.
 for (const s of ['done', 'skipped', 'open', 'locked']) literalKeys.add('lp.state.' + s);
@@ -125,11 +127,32 @@ for (const bad of [null, {}, { id: 'x', steps: [] },
 }
 expect(!P.paths.x, 'eine abgewiesene Definition landet nicht im Register');
 
-// Jeder Begriff, auf den ein Rueckverweis zeigen kann, wird von einem Schritt eingefuehrt.
-for (const map of Object.values(path_.concepts)) {
-  for (const c of Object.values(map)) {
-    expect(path_.steps.some(s => s.concepts.includes(c)), `Begriff "${c}" wird von keinem Schritt eingefuehrt`);
+const EXPECTED = { linear: 6, quadratic: 8, exponential: 4, trig: 6 };
+const ALL = Object.keys(EXPECTED).map(id => P.paths[id]).filter(Boolean);
+for (const [id, n] of Object.entries(EXPECTED)) {
+  expect(P.paths[id]?.steps.length === n, `Lernpfad "${id}" mit ${n} Schritten angemeldet (${P.paths[id]?.steps.length})`);
+}
+for (const pa of ALL) {
+  expect(new Set(pa.steps.map(s => s.id)).size === pa.steps.length, `${pa.id}: Schritt-IDs sind eindeutig`);
+  expect(pa.category === pa.id && !!FUNCTIONS[pa.steps[0].form], `${pa.id}: Kategorie passt`);
+  // Jeder Begriff, auf den ein Rueckverweis zeigen kann, wird von einem Schritt eingefuehrt.
+  for (const map of Object.values(pa.concepts)) {
+    for (const c of Object.values(map)) {
+      expect(pa.steps.some(s => s.concepts.includes(c)), `${pa.id}: Begriff "${c}" wird von keinem Schritt eingefuehrt`);
+    }
   }
+  // Begriffe von Aufgaben (concept, remedy) muessen ebenfalls eingefuehrt sein.
+  for (const st of pa.steps) for (let r = 0; r < 60; r++) {
+    const tk = core.buildTasks(st);
+    for (const t0 of tk) for (const c of [t0.concept, ...Object.values(t0.remedy ?? {})].filter(Boolean)) {
+      expectOnce(pa.steps.some(s => s.concepts.includes(c)), `${pa.id}: Aufgabe verweist auf unbekannten Begriff "${c}"`);
+    }
+  }
+}
+// Schritt-IDs sind pfaduebergreifend eindeutig (der Speicher trennt nach Pfad, die Tests nicht)
+{
+  const ids = ALL.flatMap(pa => pa.steps.map(s => s.id));
+  expect(new Set(ids).size === ids.length, 'Schritt-IDs sind ueber alle Pfade eindeutig');
 }
 
 /* ==========================================================================
@@ -161,8 +184,8 @@ function* states(step) {
   yield* rec(0, { ...base });
 }
 
-for (const [si, step] of path_.steps.entries()) {
-  const tag = `Schritt ${si + 1} (${step.id})`;
+for (const pa of ALL) for (const [si, step] of pa.steps.entries()) {
+  const tag = `${pa.id} Schritt ${si + 1} (${step.id})`;
   for (const k of ['title', 'goal']) rendered(step[k], step.form, `${tag} ${k}`);
   if (step.exploreLead) rendered(step.exploreLead, step.form, `${tag} lead`);
   for (const [i, r] of step.rule.entries()) rendered(r, step.form, `${tag} Merksatz ${i + 1}`);
@@ -194,9 +217,11 @@ for (const [si, step] of path_.steps.entries()) {
   step.missions.forEach((m, mi) => {
     rendered(m.text, step.form, `${tag} Auftrag ${mi + 1}`);
     rendered(m.hint, step.form, `${tag} Tipp ${mi + 1}`);
-    let hit = null, count = 0;
+    // Beim ersten Treffer aufhoeren: bei vier freien Reglern (Sinus) sind es
+    // sonst 14 Millionen Zustaende je Auftrag.
+    let hit = null;
     for (const s of states(step)) {
-      if (m.check(s, memo)) { count++; hit ??= s; }
+      if (m.check(s, memo)) { hit = s; break; }
     }
     expect(!!hit, `${tag}: Auftrag ${mi + 1} ist mit den Reglern NICHT erreichbar`);
     if (hit) m.done?.(hit, memo);
@@ -215,9 +240,201 @@ const visibleVertex = (form, values, view) => {
 };
 const tasksSeen = {};
 
-for (const [si, step] of path_.steps.entries()) {
+/** Anteil von 200 Stuetzstellen, deren Funktionswert im Bild liegt. */
+function visibleShare(form, values, view) {
+  let ok = 0;
+  for (let i = 0; i < 200; i++) {
+    const x = view.xMin + ((view.xMax - view.xMin) * (i + 0.5)) / 200;
+    const y = FUNCTIONS[form].f(x, values);
+    if (Number.isFinite(y) && y > view.yMin && y < view.yMax) ok++;
+  }
+  return ok / 200;
+}
+
+/** Kleinster und groesster Wert ueber eine volle Periode (fein abgetastet). */
+function sinRange(v) {
+  let lo = Infinity, hi = -Infinity;
+  const per = (2 * Math.PI) / v.b;
+  for (let i = 0; i <= 4000; i++) {
+    const y = FUNCTIONS.sinus.f(v.c + (per * i) / 4000, v);
+    lo = Math.min(lo, y); hi = Math.max(hi, y);
+  }
+  return [lo, hi];
+}
+
+/**
+ * Unabhaengige Nachrechnung fuer die Aufgabenarten der Pfade "linear",
+ * "exponential" und "trig". Grundsatz wie oben: NIE die Loesung des
+ * Erzeugers uebernehmen, sondern aus der Aufgabenstellung selbst rechnen.
+ */
+function semantic(task, qKey, tag, view) {
+  const v1 = task.q?.[1] ?? {};
+  const ans = task.answers ?? [];
+  const opt = task.type === 'choice' ? task.options : [];
+  const right = opt[task.correct];
+  const saysTrue = right?.k === 'lp.true';
+  const ok = (cond, what) => expectOnce(cond, `${tag}: ${what}`);
+  const lf = (v, x) => v.m * x + v.b;
+  const ef = (v, x) => FUNCTIONS.exponential.f(x, v);
+  const sf = (v, x) => FUNCTIONS.sinus.f(x, v);
+  const near6 = (a, b) => Math.abs(a - b) < 1e-6;
+
+  switch (qKey) {
+    /* ---- linear ---- */
+    case 'lp.t.slope2': {
+      const [, x1, y1] = v1.p1, [, x2, y2] = v1.p2;
+      ok(near6(ans[0], (y2 - y1) / (x2 - x1)), 'Steigung aus zwei Punkten falsch'); break;
+    }
+    case 'lp.t.findB': {
+      const [, x, y] = v1.p;
+      ok(near6(ans[0], y - v1.mv * x), 'b aus Punkt und Steigung falsch'); break;
+    }
+    case 'lp.t.linYint': ok(near6(ans[0], lf(v1.eq[2], 0)), 'y-Achsenabschnitt der Geraden falsch'); break;
+    case 'lp.t.linValue': ok(near6(ans[0], lf(v1.eq[2], v1.x)), 'Funktionswert der Geraden falsch'); break;
+    case 'lp.t.twoPoints': {
+      const [, x1, y1] = v1.p1, [, x2, y2] = v1.p2;
+      ok(near6(lf({ m: ans[0], b: ans[1] }, x1), y1) && near6(lf({ m: ans[0], b: ans[1] }, x2), y2),
+         'Gerade geht nicht durch beide Punkte'); break;
+    }
+    case 'lp.t.linRoot': ok(near6(lf(v1.eq[2], ans[0]), 0), 'Nullstelle der Geraden falsch'); break;
+    case 'lp.t.intersect': {
+      const f = v1.f[2], g = v1.g[2];
+      ok(near6(lf(f, ans[0]), ans[1]) && near6(lf(g, ans[0]), ans[1]) && f.m !== g.m, 'Schnittpunkt falsch'); break;
+    }
+    case 'lp.t.steepest': {
+      const ms = opt.map(o => Math.abs(o.eq.m));
+      ok(ms[task.correct] === Math.max(...ms) && ms.filter(x => x === Math.max(...ms)).length === 1, 'steilste Gerade nicht eindeutig'); break;
+    }
+    case 'lp.t.rising': ok(saysTrue === (v1.eq[2].m > 0), '"steigend" falsch bewertet'); break;
+    case 'lp.t.onLine': { const [, x, y] = v1.p; ok(saysTrue === near6(lf(v1.eq[2], x), y), '"liegt auf der Geraden" falsch bewertet'); break; }
+    case 'lp.t.linRootTf': ok(saysTrue === near6(lf(v1.eq[2], v1.r), 0), 'Nullstellen-Aussage falsch bewertet'); break;
+    case 'lp.t.linRootChoice': {
+      opt.forEach((o, i) => ok(near6(lf(v1.eq[2], o.v.x), 0) === (i === task.correct), 'Nullstellen-Auswahl falsch zugeordnet'));
+      break;
+    }
+    case 'lp.t.parallel': {
+      const m0 = v1.eq[2].m;
+      opt.forEach((o, i) => ok(near6(o.eq.m, m0) === (i === task.correct), 'parallele Gerade falsch zugeordnet'));
+      opt.forEach((o, i) => i === task.correct && ok(o.eq.b !== v1.eq[2].b, 'die "parallele" Gerade ist identisch'));
+      break;
+    }
+    case 'lp.t.perp': {
+      const m0 = v1.eq[2].m;
+      opt.forEach((o, i) => ok(near6(o.eq.m * m0, -1) === (i === task.correct), 'senkrechte Gerade falsch zugeordnet'));
+      break;
+    }
+    case 'lp.t.parallelTf': ok(saysTrue === near6(v1.f[2].m, v1.g[2].m), 'Parallel-Aussage falsch bewertet'); break;
+    case 'lp.t.noRoot':
+      opt.forEach((o, i) => ok((o.eq.m === 0 && o.eq.b !== 0) === (i === task.correct), '"keine Nullstelle" falsch zugeordnet'));
+      break;
+    case 'lp.t.throughBoth': {
+      const [, x1, y1] = v1.p1, [, x2, y2] = v1.p2;
+      opt.forEach((o, i) => ok((near6(lf(o.eq, x1), y1) && near6(lf(o.eq, x2), y2)) === (i === task.correct),
+                               '"durch beide Punkte" falsch zugeordnet'));
+      break;
+    }
+    case 'lp.t.linDescribe': {
+      const v = v1.eq[2];
+      const dir = v.m > 0 ? 'lp.lin.up' : v.m < 0 ? 'lp.lin.down' : 'lp.lin.flat';
+      ok(right.v.d[1] === dir && right.v.b === v.b, 'Beschreibung der Geraden falsch'); break;
+    }
+    case 'lp.t.linShift': {
+      const b = v1.eq[2].b;
+      ok(right.k === (b > 0 ? 'lp.dir.up' : 'lp.dir.down') && right.v.n === Math.abs(b) && v1.base[2].m === v1.eq[2].m,
+         'Verschiebung der Geraden falsch'); break;
+    }
+    /* ---- exponentiell ---- */
+    case 'lp.t.expValue': ok(near6(ans[0], ef(v1.eq[2], v1.x)), 'Funktionswert der Exponentialfunktion falsch'); break;
+    case 'lp.t.expYint': ok(near6(ans[0], ef(v1.eq[2], 0)), 'y-Achsenabschnitt der Exponentialfunktion falsch'); break;
+    case 'lp.t.findExpA': { const [, x, y] = v1.p; ok(near6(ans[0] * v1.bv ** x, y), 'Anfangswert erfuellt die Punktprobe nicht'); break; }
+    case 'lp.t.expYintTf': ok(saysTrue === near6(ef(v1.eq[2], 0), v1.y), 'y-Achsenabschnitt-Aussage falsch bewertet'); break;
+    case 'lp.t.factorUp': ok(near6(ans[0], 1 + v1.p / 100), 'Wachstumsfaktor falsch'); break;
+    case 'lp.t.factorDown': ok(near6(ans[0], 1 - v1.p / 100), 'Abnahmefaktor falsch'); break;
+    case 'lp.t.growing': ok(saysTrue === (v1.eq[2].b > 1 && v1.eq[2].a > 0), '"steigend" falsch bewertet'); break;
+    case 'lp.t.decay':
+      opt.forEach((o, i) => ok((o.eq.b < 1 && o.eq.a > 0) === (i === task.correct), '"Abnahme" falsch zugeordnet'));
+      break;
+    case 'lp.t.whatPercent': {
+      const b = v1.eq[2].b;
+      ok(right.k === (b > 1 ? 'lp.pct.up' : 'lp.pct.down') && near6(right.v.p, Math.abs(b - 1) * 100), 'Prozentsatz falsch'); break;
+    }
+    case 'lp.t.model': {
+      const o = right; const want = 1 + v1.p / 100;
+      ok(!o.form && near6(o.eq.a, v1.av) && near6(o.eq.b, want) && o.eq.c === 0, 'Zinsmodell falsch'); break;
+    }
+    case 'lp.t.factorTf': {
+      const b = v1.eq[2].b;
+      const want = { 'lp.kind.double': 2, 'lp.kind.half': 0.5, 'lp.kind.up': 1.1, 'lp.kind.down': 0.9 }[v1.what[1]];
+      ok(saysTrue === near6(b, want), 'Faktor-Aussage falsch bewertet'); break;
+    }
+    case 'lp.t.asymptote': {
+      const v = v1.eq[2];
+      // Asymptote: Grenzwert fuer x -> -inf (b>1) bzw. +inf (b<1)
+      const far = v.b > 1 ? -60 : 60;
+      ok(Math.abs(ef(v, far) - ans[0]) < 1e-6, 'Asymptote falsch'); break;
+    }
+    case 'lp.t.whichAsym': ok(right.k === 'lp.asym.y' && right.v.c === v1.eq[2].c, 'Asymptote falsch markiert'); break;
+    /* ---- trigonometrisch ---- */
+    case 'lp.t.sinValue': ok(Math.abs(Math.sin(v1.x[1]) - ans[0]) < 1e-9, 'Sinuswert falsch'); break;
+    case 'lp.t.sinZeroTf': ok(saysTrue === (Math.abs(Math.sin(v1.x[1])) < 1e-9), 'Sinus-Nullstelle falsch bewertet'); break;
+    case 'lp.t.sinZeroCount': {
+      const lo = v1.lo[1], hi = v1.hi[1];
+      const n = Math.floor(hi / Math.PI + 1e-9) - Math.ceil(lo / Math.PI - 1e-9) + 1;
+      ok(Number(right.text) === n, `Anzahl der Sinus-Nullstellen falsch (${right.text} statt ${n})`); break;
+    }
+    case 'lp.t.sinPeriod': ok(right.text === '2π', 'Periode von sin(x) falsch'); break;
+    case 'lp.t.amp': ok(near6(ans[0], (sinRange(v1.eq[2])[1] - sinRange(v1.eq[2])[0]) / 2), 'Amplitude falsch'); break;
+    case 'lp.t.ampTf': {
+      const [lo, hi] = sinRange(v1.eq[2]);
+      ok(saysTrue === (Math.abs((hi - lo) / 2 - v1.n) < 1e-6), 'Amplituden-Aussage falsch bewertet'); break;
+    }
+    case 'lp.t.period': {
+      const v = v1.eq[2], p = ans[0];
+      let same = true;
+      for (let x = -3; x <= 3; x += 0.37) if (Math.abs(sf(v, x) - sf(v, x + p)) > 1e-9) same = false;
+      let shorter = false;
+      for (const q of [p / 2, p / 3, p / 4]) {
+        let s2 = true;
+        for (let x = -3; x <= 3; x += 0.37) if (Math.abs(sf(v, x) - sf(v, x + q)) > 1e-9) s2 = false;
+        if (s2) shorter = true;
+      }
+      ok(same && !shorter, 'Periode falsch (nicht die kleinste)'); break;
+    }
+    case 'lp.t.freq': ok(near6(2 * Math.PI / ans[0], v1.p[1]), 'b aus der Periode falsch'); break;
+    case 'lp.t.periodTf': ok(saysTrue === near6(2 * Math.PI / v1.eq[2].b, v1.p[1]), 'Perioden-Aussage falsch bewertet'); break;
+    case 'lp.t.sinShiftZero': ok(saysTrue === (Math.abs(sf(v1.eq[2], v1.x[1])) < 1e-9), 'Nullstellen-Aussage (Sinus) falsch bewertet'); break;
+    case 'lp.t.midline': {
+      const [lo, hi] = sinRange(v1.eq[2]);
+      ok(near6(ans[0], (lo + hi) / 2), 'Mittellinie falsch'); break;
+    }
+    case 'lp.t.maxTf': ok(saysTrue === near6(sinRange(v1.eq[2])[1], v1.y), 'Maximum-Aussage falsch bewertet'); break;
+    case 'lp.t.sinMax': ok(near6(ans[0], sinRange(v1.eq[2])[1]), 'Maximum falsch'); break;
+    case 'lp.t.sinRange': {
+      const [lo, hi] = sinRange(v1.eq[2]);
+      opt.forEach((o, i) => {
+        if (o.k !== 'lp.range' || Array.isArray(o.v.lo)) { ok(i !== task.correct, 'Wertebereich falsch markiert'); return; }
+        ok((near6(o.v.lo, lo) && near6(o.v.hi, hi)) === (i === task.correct), 'Wertebereich falsch zugeordnet');
+      });
+      break;
+    }
+    case 'lp.t.cosAsSin':
+      opt.forEach((o, i) => {
+        let same = true;
+        for (let x = -6; x <= 6; x += 0.31) if (Math.abs(sf(o.eq, x) - Math.cos(x)) > 1e-9) same = false;
+        ok(same === (i === task.correct), 'Kosinus als Sinus falsch zugeordnet');
+      });
+      break;
+    case 'lp.t.dirQSin': {
+      const c = v1.eq[2].c;
+      ok(right.k === (c > 0 ? 'lp.dir.right' : 'lp.dir.left') && near6(right.v.n[1], Math.abs(c)), 'Verschiebungsrichtung (Sinus) falsch'); break;
+    }
+    default: break;
+  }
+}
+
+for (const pa of ALL) for (const [si, step] of pa.steps.entries()) {
   step.tasks.forEach((gen, gi) => {
-    const tag = `Schritt ${si + 1}, Erzeuger ${gi + 1}`;
+    const tag = `${pa.id} Schritt ${si + 1}, Erzeuger ${gi + 1}`;
     for (let run = 0; run < RUNS; run++) {
       let task;
       try { task = gen(); } catch (e) { expectOnce(false, `${tag}: wirft ${e.message}`); continue; }
@@ -240,7 +457,10 @@ for (const [si, step] of path_.steps.entries()) {
         for (const p of d.params) expectOnce(inRange(p, task.graph.values[p.id]), `${tag}: Graph-Wert ${p.id} ausserhalb`);
         expectOnce(visibleVertex(task.graph.form, task.graph.values, view),
                    `${tag}: Scheitelpunkt liegt ausserhalb des Ausschnitts (${JSON.stringify(task.graph.values)})`);
+        expectOnce(visibleShare(task.graph.form, task.graph.values, view) > 0.15,
+                   `${tag}: Graph ist im Ausschnitt kaum zu sehen (${JSON.stringify(task.graph.values)})`);
       }
+      semantic(task, qKey, tag, view);
 
       if (task.type === 'choice') {
         expectOnce(task.options.length >= 2, `${tag}: weniger als zwei Antworten`);
@@ -258,6 +478,7 @@ for (const [si, step] of path_.steps.entries()) {
           const fi = eqs[i].form ?? form;
           for (const p of FUNCTIONS[fi].params) expectOnce(inRange(p, eqs[i].eq[p.id]), `${tag}: Antwortwert ${p.id} ausserhalb`);
           for (let j = i + 1; j < eqs.length; j++) {
+            if ((eqs[j].form ?? form) !== fi) continue;          // verschiedene Formen: Texte unterscheiden sich ohnehin
             expectOnce(!kit.sameCurve(fi, eqs[i].eq, eqs[j].eq), `${tag}: zwei Antworten beschreiben denselben Graphen`);
           }
         }
@@ -415,8 +636,12 @@ for (const [si, step] of path_.steps.entries()) {
           const t0 = task.target[p.id], s0 = task.start[p.id];
           expectOnce(inSlider(p, t0), `${tag}: Ziel ${p.id}=${t0} ausserhalb des Reglers`);
           if (!task.free.includes(p.id)) expectOnce(t0 === s0, `${tag}: verborgener Parameter ${p.id} weicht vom Ziel ab - unloesbar`);
-          const k = (t0 - p.min) / p.step;
-          expectOnce(Math.abs(k - Math.round(k)) < 1e-6, `${tag}: Ziel ${p.id}=${t0} liegt nicht auf dem Reglerraster`);
+          // Erreichbar heisst: ein Rasterwert des Reglers liegt innerhalb der
+          // Bewertungstoleranz. pi/2 liegt nicht auf dem 0,1-Raster, 1,6 aber nah genug.
+          const k = Math.round((t0 - p.min) / p.step);
+          const nearest = p.min + k * p.step;
+          expectOnce(Math.abs(nearest - t0) <= MFE.math.tolerance(t0, p.step),
+                     `${tag}: Ziel ${p.id}=${t0} ist mit dem Regler nicht genau genug einstellbar`);
         }
         expectOnce(core.gradeBuild(task, task.target), `${tag}: das Ziel selbst gilt nicht als getroffen`);
         expectOnce(!core.gradeBuild(task, task.start), `${tag}: schon der Start gilt als getroffen`);
@@ -428,9 +653,9 @@ for (const [si, step] of path_.steps.entries()) {
   // Eine Uebungsrunde: fuenf Aufgaben, jeder Erzeuger einmal
   for (let r = 0; r < 30; r++) {
     const set = core.buildTasks(step);
-    expectOnce(set.length === (step.count ?? 5), `Schritt ${si + 1}: Uebungsrunde hat ${set.length} statt 5 Aufgaben`);
+    expectOnce(set.length === (step.count ?? 5), `${pa.id} Schritt ${si + 1}: Uebungsrunde hat ${set.length} statt 5 Aufgaben`);
     const kinds = new Set(set.map(t => (Array.isArray(t.q) ? t.q[0] : t.q) + t.type));
-    expectOnce(kinds.size >= Math.min(4, step.tasks.length - 1), `Schritt ${si + 1}: zu wenig Abwechslung in einer Runde`);
+    expectOnce(kinds.size >= Math.min(4, step.tasks.length - 1), `${pa.id} Schritt ${si + 1}: zu wenig Abwechslung in einer Runde`);
   }
 }
 function near(a, b) { return Math.abs(a - b) < 1e-9; }
@@ -483,6 +708,97 @@ ls.setItem(core.STORE_KEY, JSON.stringify({ rev: 1, paths: { quadratic: { q1: { 
 ls.removeItem(core.STORE_KEY);
 
 /* ==========================================================================
+   5b · FORTSETZEN: GESICHERTER SCHRITT
+   Der Stand kommt aus dem WebView-Speicher und ist damit fremdes Material.
+   Jede Abweichung muss zum Verwerfen fuehren (null) oder bereinigt werden -
+   nie zu einem Absturz beim Wiederherstellen.
+   ========================================================================== */
+{
+  const now = Date.now();
+  const base = (pid, idx, phase = 'explore', mode = 'learn') => {
+    const st = P.paths[pid].steps[idx];
+    const d = FUNCTIONS[st.form];
+    const raw = {
+      rev: 1, at: now - 1000, open: true, pid, idx, mode, phase,
+      guess: 1, predictOrder: st.predict.options.map((_, i) => i).reverse(),
+      values: { ...Object.fromEntries(d.params.map(p => [p.id, p.value])), ...st.start },
+      traceX: st.trace ? st.trace.start : null, memo: { x1: 2 }, mission: 1, trail: []
+    };
+    if (phase === 'practice') {
+      const tasks = core.buildTasks(st);
+      Object.assign(raw, { tasks, ti: 2, marks: [true, 'half'], remedies: [], attempt: 0, locked: false,
+        order: tasks[2].type === 'choice' ? tasks[2].options.map((_, i) => i) : [], tried: [],
+        wrongValues: null, taskValues: tasks[2].type === 'build' ? { ...tasks[2].start } : null,
+        inputs: tasks[2].type === 'input' ? tasks[2].answers.map(() => '1,5') : null, fb: { cls: 'ok', text: 'Richtig!' } });
+    }
+    return raw;
+  };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  // Jeder Schritt jedes Pfades: erkunden und ueben muss den Rundlauf ueberstehen.
+  for (const pa of ALL) for (let i = 0; i < pa.steps.length; i++) {
+    for (const phase of ['predict', 'explore', 'rule', 'practice']) {
+      for (let r = 0; r < (phase === 'practice' ? 15 : 1); r++) {
+        const raw = clone(base(pa.id, i, phase));
+        const st = core.sanitizeLesson(raw, now);
+        expectOnce(!!st, `${pa.id} Schritt ${i + 1}/${phase}: gueltiger Stand wird angenommen`);
+        if (!st) continue;
+        expectOnce(st.phase === phase && st.guess === 1 && st.mission === 1, `${pa.id}/${phase}: Felder bleiben erhalten`);
+        if (phase === 'practice') {
+          expectOnce(st.score === 1.5 && st.ti === 2 && st.tasks.length === raw.tasks.length, `${pa.id}/${phase}: Punkte aus den Markierungen`);
+        }
+      }
+    }
+  }
+  const bad = (what, mutate, phase = 'practice') => {
+    const raw = clone(base('quadratic', 3, phase));
+    mutate(raw);
+    let st;
+    try { st = core.sanitizeLesson(raw, now); } catch (e) { expect(false, `Fortsetzen: ${what} wirft ${e.message}`); return; }
+    expect(st === null, `Fortsetzen: ${what} wird verworfen`);
+  };
+  bad('fremde Fassung', r => { r.rev = 2; });
+  bad('zu alter Stand', r => { r.at = now - 30 * 24 * 3600 * 1000; });
+  bad('Stand aus der Zukunft', r => { r.at = now + 3600 * 1000; });
+  bad('unbekannter Pfad', r => { r.pid = 'evil'; });
+  bad('Schritt ausserhalb', r => { r.idx = 99; });
+  bad('Schritt als Text', r => { r.idx = '3'; });
+  bad('unbekannte Phase', r => { r.phase = 'hack'; });
+  bad('Test ausserhalb der Uebung', r => { r.mode = 'test'; r.phase = 'explore'; }, 'explore');
+  bad('Regler als Text', r => { r.values.a = '1'; });
+  bad('Regler NaN', r => { r.values.a = NaN; });
+  bad('Regler riesig', r => { r.values.d = 1e9; });
+  bad('Basis unter der harten Grenze', r => { r.pid = 'exponential'; r.idx = 0; r.values = { a: 1, b: -2, c: 0 }; r.tasks = core.buildTasks(P.paths.exponential.steps[0]); r.order = r.tasks[2].type === 'choice' ? r.tasks[2].options.map((_, i) => i) : []; });
+  bad('keine Aufgaben', r => { r.tasks = []; });
+  bad('zu viele Aufgaben', r => { r.tasks = Array(25).fill(r.tasks[0]); });
+  bad('Aufgabe unbekannten Typs', r => { r.tasks[0].type = 'eval'; });
+  bad('Schluessel mit Fremdtext', r => { r.tasks[1].q = '<img src=x onerror=alert(1)>'; });
+  bad('Variable mit Objekt', r => { r.tasks[1].q = ['lp.t.vertex', { eq: { toString: 'x' } }]; });
+  bad('Gleichung mit unbekannter Form', r => { r.tasks[1].q = ['lp.t.vertex', { eq: ['eq', 'evil', {}] }]; });
+  bad('Antwort NaN', r => { const t0 = r.tasks.find(x => x.type === 'input'); if (t0) t0.answers = [NaN]; else r.tasks[0].type = 'x'; });
+  bad('Auswahl ohne Optionen', r => { const t0 = r.tasks.find(x => x.type === 'choice'); if (t0) t0.options = [t0.options[0]]; else r.tasks[0].type = 'x'; });
+  bad('richtige Antwort ausserhalb', r => { const t0 = r.tasks.find(x => x.type === 'choice'); if (t0) t0.correct = 9; else r.tasks[0].type = 'x'; });
+  bad('Nachbau mit fremdem Parameter', r => { const t0 = r.tasks.find(x => x.type === 'build'); if (t0) t0.free = ['zz']; else r.tasks[0].type = 'x'; });
+  bad('Aufgabenindex ausserhalb', r => { r.ti = 50; });
+  bad('Markierung erfunden', r => { r.marks = ['voll']; });
+  bad('Reihenfolge keine Permutation', r => { if (r.tasks[2].type === 'choice') r.order = [0, 0, 0, 0]; else r.ti = 99; });
+  {
+    // Bereinigt statt verworfen: Punkte, Merker, Rueckverweise, Eingaben, Spur
+    const raw = clone(base('quadratic', 3, 'practice'));
+    Object.assign(raw, { score: 999, memo: { __proto__x: 1, ok: 2, bad: 'x', ['a'.repeat(30)]: 3 },
+      remedies: [0, 1, 7, -1, 'x'], trail: Array(40).fill(raw.values), tried: [0, 99],
+      inputs: raw.inputs ? ['x'.repeat(500)] : null });
+    raw.memo = JSON.parse('{"__proto__": 5, "ok": 2, "bad": "x"}');
+    const st = core.sanitizeLesson(raw, now);
+    expect(!!st && st.score === 1.5, 'Fortsetzen: Punktestand wird neu berechnet, nicht uebernommen');
+    expect(!!st && Object.keys(st.memo).join() === 'ok' && Object.getPrototypeOf(st.memo) === window.Object.prototype,
+           'Fortsetzen: Merker nur mit Zahlen, ohne __proto__');
+    expect(!!st && st.remedies.join() === '0,1', 'Fortsetzen: Rueckverweise nur auf fruehere Schritte');
+    expect(!!st && st.trail.length <= 8, 'Fortsetzen: Spur begrenzt');
+    expect(!!st && (!st.inputs || st.inputs.every(v => v.length <= 40)), 'Fortsetzen: ueberlange Eingaben werden geleert');
+  }
+}
+
+/* ==========================================================================
    6 · BEWERTUNG
    ========================================================================== */
 expect(core.needFor(5) === 4 && core.needFor(10) === 8 && core.needFor(4) === 4, 'Mindestpunktzahl: 80 %');
@@ -510,10 +826,80 @@ expect(core.fmtVar(-2.5) === '−2.5', 'englisch mit Punkt');
 I18N.lang = 'de';
 
 /* ==========================================================================
+   5c · ERGEBNISCODE FUER DIE LEHRKRAFT
+   ========================================================================== */
+{
+  const ALPH = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let codes = 0;
+  for (const pa of ALL) {
+    const n = pa.steps.length;
+    // Alle Kombinationen geschafft / uebersprungen / offen (3^n) mit wechselnden Punkten und Tagen
+    for (let combo = 1; combo < 3 ** n; combo++) {
+      const done = [], skipped = [];
+      for (let i = 0, c = combo; i < n; i++, c = Math.floor(c / 3)) {
+        if (c % 3 === 1) done.push(i); else if (c % 3 === 2) skipped.push(i);
+      }
+      const r = { pid: pa.id, done, skipped, points: (combo % 128) / 2, day: (combo * 37) % 4096, total: n };
+      const code = core.encodeResult(r);
+      codes++;
+      expect(/^[LQET]-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]$/.test(code), `Codeformat ${code}`);
+      const back = core.decodeResult(code);
+      expect(back && JSON.stringify(back) === JSON.stringify(r), `Roundtrip ${pa.id} ${combo}: ${code}`);
+      // Kleinschreibung, Leerzeichen, ohne Bindestriche: dasselbe Ergebnis
+      expect(JSON.stringify(core.decodeResult(' ' + code.toLowerCase().replace(/-/g, ' ') + ' ')) === JSON.stringify(r),
+             `Code tolerant gelesen ${code}`);
+      if (combo % 97 === 1) {
+        // Jeder einzelne Tippfehler muss auffallen
+        const raw = code.replace(/-/g, '');
+        for (let pos = 0; pos < raw.length; pos++) for (const ch of ALPH) {
+          if (ch === raw[pos]) continue;
+          const bad = raw.slice(0, pos) + ch + raw.slice(pos + 1);
+          const got = core.decodeResult(bad);
+          expect(!got, `Tippfehler unbemerkt: ${code} -> ${bad}`);
+        }
+      }
+    }
+  }
+  expect(codes > 7000, `genug Codes geprueft (${codes})`);
+  // Ergebnis aus echtem Speicherstand
+  const store = { quadratic: { q1: { s: 'skipped', best: 0, n: 0 }, q2: { s: 'done', best: 4.5, n: 5 } } };
+  const r = core.pathResult('quadratic', store, Date.UTC(2026, 10, 25, 12));
+  expect(r && r.done.join() === '1' && r.skipped.join() === '0' && r.points === 4.5 && r.total === 8,
+         'pathResult liest den Stand');
+  expect(r.day === 328, `Tageszahl 25.11.2026 (${r?.day})`);
+  expect(core.pathResult('quadratic', {}, Date.now()) === null, 'ohne Fortschritt kein Code');
+  expect(core.pathResult('gibtsnicht', store) === null, 'unbekannter Pfad: kein Code');
+  expect(core.pathResult('quadratic', store, Date.UTC(2020, 0, 1)).day === 0, 'Datum vor 2026: Tag 0');
+  expect(core.pathResult('quadratic', store, Date.UTC(2040, 0, 1)).day === 4095, 'ferne Zukunft: gekappt');
+  // Muell und Grenzfaelle
+  for (const bad of ['', null, undefined, 42, 'Q', 'Q-0000-0000-0', 'X-1234-5678-9', 'Q-1234-5678', 'Q-12345-678-9',
+                     'Q-ÄÖÜ1-2345-6', '<script>', 'Q-ZZZZ-ZZZZ-Z']) {
+    expect(core.decodeResult(bad) === null, `ungueltig abgelehnt: ${String(bad)}`);
+  }
+  // Fremder Buchstabe bei passender Pruefziffer: L-Code als Q ausgegeben
+  const lin = core.encodeResult({ pid: 'linear', done: [0], skipped: [], points: 5, day: 3, total: 6 });
+  expect(core.decodeResult('Q' + lin.slice(1)) === null, 'Klassenbuchstabe gehoert zur Pruefziffer');
+  // Schritt jenseits der Pfadlaenge (Exponential hat 4 Schritte)
+  const fake = core.encodeResult({ pid: 'exponential', done: [6], skipped: [], points: 1, day: 3, total: 4 });
+  expect(core.decodeResult(fake) === null, 'Schritt, den es nicht gibt, wird abgelehnt');
+  const both = core.encodeResult({ pid: 'trig', done: [1], skipped: [1], points: 1, day: 3, total: 6 });
+  expect(core.decodeResult(both) === null, 'geschafft und uebersprungen zugleich wird abgelehnt');
+  I18N.lang = 'de';
+  const sum = core.resultSummary(r);
+  expect(sum.includes('2 von 8') && sum.includes('1 per Test') && sum.includes('4,5 Punkte') && sum.includes('25.11.2026'),
+         `Zusammenfassung DE: ${sum}`);
+  I18N.lang = 'en';
+  const sumEn = core.resultSummary(r);
+  expect(sumEn.includes('2 of 8') && sumEn.includes('4.5 points') && sumEn.includes('25/11/2026'), `Zusammenfassung EN: ${sumEn}`);
+  I18N.lang = 'de';
+}
+
+/* ==========================================================================
    ERGEBNIS
    ========================================================================== */
 const total = Object.values(tasksSeen).reduce((a, b) => a + b, 0);
-console.log(`  ${path_.steps.length} Schritte, ${path_.steps.reduce((a, s) => a + s.missions.length, 0)} Auftraege, `
+console.log(`  ${ALL.length} Pfade, ${ALL.reduce((a, pa) => a + pa.steps.length, 0)} Schritte, `
+          + `${ALL.reduce((a, pa) => a + pa.steps.reduce((x, s) => x + s.missions.length, 0), 0)} Auftraege, `
           + `${total} erzeugte Aufgaben aus ${Object.keys(tasksSeen).length} Aufgabenarten geprueft`);
 if (errors.length || problems.length) {
   console.error(`${problems.length + errors.length} Befund(e):`);

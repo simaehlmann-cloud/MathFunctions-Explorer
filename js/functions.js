@@ -238,7 +238,7 @@ const FUNCTIONS = {
     params: [
       { id: 'a', symbol: 'a', value: 2, min: -5, max: 5, step: 0.1, color: 1, role: 'stretch', desc: 'd.sin.a', pool: [-2, -1, 0.5, 1, 2, 3] },
       { id: 'b', symbol: 'b', value: 1, min: 0.1, max: 5, step: 0.1, color: 2, role: 'freq', desc: 'd.sin.b', hardMin: 0.001, pool: [0.5, 1, 2, 3] },
-      { id: 'c', symbol: 'c', value: 0, min: -6.5, max: 6.5, step: 0.1, color: 3, role: 'shiftX', desc: 'd.sin.c', pool: [0, 1, -1, 1.5707963] },
+      { id: 'c', symbol: 'c', value: 0, min: -6.5, max: 6.5, step: 0.1, color: 3, role: 'shiftX', desc: 'd.sin.c', pool: [0, 1, -1, 1.5707963], snapPi: true },
       { id: 'd', symbol: 'd', value: 0, min: -5, max: 5, step: 0.5, color: 4, role: 'shiftY', desc: 'd.sin.d', pool: [-2, -1, 0, 1, 2] }
     ],
     tokens: () => [P('a'), T(' \u00b7 sin('), P('b'), T(' \u00b7 (x \u2212 '), P('c'), T(')) + '), P('d')],
@@ -251,7 +251,7 @@ const FUNCTIONS = {
       g.line(g.xMin, v.d - Math.abs(v.a), g.xMax, v.d - Math.abs(v.a), { color: col(1), dash: [8, 6] });
       const period = (2 * Math.PI) / v.b;
       g.line(v.c, v.d, v.c + period, v.d, { color: col(2), width: 3 });
-      g.labelAt(v.c + period / 2, v.d, `T = ${mfmt(period)}`, col(2), 'below');
+      g.labelAt(v.c + period / 2, v.d, `T = ${piLabel(period)}`, col(2), 'below');   // 2pi statt 6,28
     }
   },
 
@@ -261,7 +261,7 @@ const FUNCTIONS = {
     params: [
       { id: 'a', symbol: 'a', value: 1, min: -4, max: 4, step: 0.1, color: 1, role: 'stretch', desc: 'd.tan.a', pool: [-2, -1, 0.5, 1, 2] },
       { id: 'b', symbol: 'b', value: 1, min: 0.25, max: 4, step: 0.25, color: 2, role: 'freq', desc: 'd.tan.b', hardMin: 0.05, pool: [0.5, 1, 2] },
-      { id: 'c', symbol: 'c', value: 0, min: -Math.PI, max: Math.PI, step: Math.PI / 12, color: 3, role: 'shiftX', desc: 'd.tan.c', pool: [0, Math.PI / 4, Math.PI / 2] },
+      { id: 'c', symbol: 'c', value: 0, min: -Math.PI, max: Math.PI, step: Math.PI / 12, color: 3, role: 'shiftX', desc: 'd.tan.c', pool: [0, Math.PI / 4, Math.PI / 2], snapPi: true },
       { id: 'd', symbol: 'd', value: 0, min: -4, max: 4, step: 0.25, color: 4, role: 'shiftY', desc: 'd.tan.d', pool: [-1, 0, 1] }
     ],
     tokens: () => [P('a'), T(' \u00b7 tan('), P('b'), T(' \u00b7 (x \u2212 '), P('c'), T(')) + '), P('d')],

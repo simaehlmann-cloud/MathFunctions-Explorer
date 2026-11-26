@@ -25,7 +25,8 @@ const note = (msg) => problems.push(msg);
 
 const SCRIPTS = ['js/licence.js', 'js/billing.js', 'js/i18n.js', 'js/functions.js',
                  'js/graph.js', 'js/diagnose.js', 'js/nav.js', 'js/ui.js', 'js/qr.js', 'js/quiz.js',
-                 'js/paths.js', 'js/paths-quadratic.js', 'js/app.js'];
+                 'js/paths.js', 'js/paths-linear.js', 'js/paths-quadratic.js',
+                 'js/paths-exponential.js', 'js/paths-trig.js', 'js/app.js'];
 
 const html = await read('index.html');
 const htmlIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
@@ -505,9 +506,13 @@ for (const [file, needs] of [['js/graph.js', 'js/functions.js'],
                              ['js/diagnose.js', 'js/functions.js'],
                              ['js/quiz.js', 'js/diagnose.js'],
                              ['js/paths.js', 'js/quiz.js'],
+                             ['js/paths-linear.js', 'js/paths.js'],
                              ['js/paths-quadratic.js', 'js/paths.js'],
+                             ['js/paths-exponential.js', 'js/paths.js'],
+                             ['js/paths-trig.js', 'js/paths.js'],
                              ['js/app.js', 'js/quiz.js'],
-                             ['js/app.js', 'js/paths-quadratic.js']]) {
+                             ['js/app.js', 'js/paths-quadratic.js'],
+                             ['js/app.js', 'js/paths-trig.js']]) {
   if (scriptOrder(file) >= 0 && scriptOrder(needs) >= 0 && scriptOrder(file) < scriptOrder(needs)) {
     note(`index.html: ${file} wird vor ${needs} geladen, braucht es aber beim Auswerten`);
   }

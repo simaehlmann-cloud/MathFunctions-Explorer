@@ -1378,3 +1378,15 @@ canvas.fn-thumb { height: clamp(58px, 17vw, 96px); }
 .page-inner h2.lp-result { margin: .25rem 0 .75rem; font-size: 1.25rem; }
 .lp-result.is-pass { color: var(--ok-text); }
 .lp-result.is-fail { color: var(--err-text); }
+
+/* Unterbrochener Schritt: Fortsetzen anbieten */
+.lp-resume {
+  margin: 0 0 1rem; padding: .8rem .9rem; border-radius: var(--radius);
+  background: var(--cat-tint, var(--surface-2)); border: 1px solid var(--cat, var(--accent));
+}
+.page-inner .lp-resume p { margin-bottom: .6rem; font-weight: 600; }
+
+/* Lehrkraft: Ergebniscode pruefen */
+.lp-check { margin-top: 1.5rem; }
+.lp-check .form-row { margin-bottom: .5rem; }
+.lp-check input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }

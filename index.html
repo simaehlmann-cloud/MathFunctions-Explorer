@@ -8,6 +8,9 @@
   Strikte Content-Security-Policy.
   connect-src 'self' erlaubt dem Service Worker, die eigenen Dateien
   nachzuladen - und sonst nichts. Keine fremde Domain ist erreichbar.
+  frame-ancestors steht bewusst NICHT hier: im <meta>-Element ignoriert der
+  Browser die Anweisung und meldet einen Konsolenfehler. Sie wirkt nur als
+  HTTP-Kopfzeile, die GitHub Pages nicht setzen laesst.
   Der In-App-Kauf (js/billing.js) laeuft ueber StoreKit im nativen Teil der
   App und braucht hier keine Freigabe. Die Cordova-Bruecke unter iOS nutzt
   WKScriptMessageHandler, also ebenfalls keine Netzadresse.
@@ -15,7 +18,7 @@
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:;
                connect-src 'self'; manifest-src 'self'; worker-src 'self';
-               base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+               base-uri 'none'; form-action 'none'">
 
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
@@ -139,7 +142,7 @@
 
     <h2 class="home-sub" data-i18n="home.more">Weiter geht es hier</h2>
     <div class="fn-grid fn-grid-tools">
-      <button class="fn-card tool-card" type="button" id="card-learn" data-tool="learn" data-feature="learnPaths">
+      <button class="fn-card tool-card" type="button" id="card-learn" data-tool="learn">
         <span class="tool-mark" aria-hidden="true">&#x276F;</span>
         <span class="fn-name" data-i18n="home.learn">Lernpfade</span>
         <span class="fn-desc" data-i18n="home.learnDesc">Schritt für Schritt allein lernen: vermuten, entdecken, merken, üben.</span>
@@ -647,12 +650,33 @@
       <div id="lp-bar" class="lp-bar" role="progressbar" aria-valuemin="0" aria-valuenow="0" aria-valuemax="8"
            data-i18n-aria="lp.title"><div id="lp-bar-fill" class="lp-bar-fill"></div></div>
       <p id="lp-all-done" class="lp-done" hidden data-i18n="lp.allDone">Alle Schritte geschafft.</p>
+      <div id="lp-resume" class="lp-resume" role="status" hidden>
+        <p id="lp-resume-text"></p>
+        <div class="action-row">
+          <button id="btn-lp-resume" class="btn-primary" type="button" data-i18n="lp.resume">Fortsetzen</button>
+          <button id="btn-lp-discard" class="btn-ghost" type="button" data-i18n="lp.discard">Verwerfen</button>
+        </div>
+      </div>
       <ol id="lp-steps" class="lp-steps"></ol>
       <div class="action-row">
         <button id="btn-lp-continue" class="btn-primary" type="button" data-i18n="lp.continue">Weiterlernen</button>
+        <button id="btn-lp-code" class="btn-secondary" type="button" data-i18n="lp.code.btn">Ergebnis für die Lehrkraft</button>
         <button id="btn-lp-reset" class="btn-ghost" type="button" data-i18n="lp.reset">Fortschritt zurücksetzen</button>
       </div>
     </section>
+
+    <!-- Fuer Lehrkraefte: Ergebniscode einer Schuelerin entschluesseln -->
+    <details class="panel-section lp-check">
+      <summary data-i18n="lp.check.title">Code einer Schülerin oder eines Schülers prüfen</summary>
+      <div class="form-row">
+        <label for="lp-check-input" data-i18n="lp.check.label">Ergebniscode</label>
+        <input type="text" id="lp-check-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
+      </div>
+      <div class="action-row">
+        <button id="btn-lp-check" class="btn-secondary" type="button" data-i18n="lp.check.btn">Prüfen</button>
+      </div>
+      <p id="lp-check-out" class="feedback" role="status" aria-live="polite"></p>
+    </details>
   </div>
 </main>
 
@@ -771,6 +795,20 @@
      Der Code steht nur auf dem Geraet. Er wird gezeigt oder abgescannt -
      gesendet wird nichts. Die Pruefziffer schuetzt gegen Vertipper, nicht
      gegen Absicht; das ist im Klassenraum die richtige Groessenordnung. -->
+<dialog id="lp-code-dialog" class="dialog">
+  <div class="dialog-inner">
+    <h3 data-i18n="lp.code.title">Lernpfad-Ergebnis</h3>
+    <p id="lp-code-summary"></p>
+    <p id="lp-code" class="race-code"></p>
+    <p class="hint" data-i18n="lp.code.hint">Zeige den Code der Lehrkraft oder lass ihn abscannen.</p>
+    <div class="qr-wrap"><canvas id="lp-code-qr" role="img" data-i18n-aria="lp.code.title"></canvas></div>
+    <menu class="dialog-actions">
+      <button id="btn-lp-code-copy" class="btn-secondary" type="button" data-i18n="race.codeCopy">Code kopieren</button>
+      <button id="btn-lp-code-close" class="btn-primary" type="button" data-i18n="btn.close">Schließen</button>
+    </menu>
+  </div>
+</dialog>
+
 <dialog id="race-dialog" class="dialog">
   <div class="dialog-inner">
     <h3 data-i18n="race.codeTitle">Dein Ergebnis</h3>
@@ -821,7 +859,10 @@
 <script src="js/qr.js"></script>
 <script src="js/quiz.js"></script>
 <script src="js/paths.js"></script>
+<script src="js/paths-linear.js"></script>
 <script src="js/paths-quadratic.js"></script>
+<script src="js/paths-exponential.js"></script>
+<script src="js/paths-trig.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

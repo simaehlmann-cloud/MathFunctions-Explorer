@@ -50,7 +50,10 @@ const FILES = [
   'js/qr.js',
   'js/quiz.js',
   'js/paths.js',
+  'js/paths-linear.js',
   'js/paths-quadratic.js',
+  'js/paths-exponential.js',
+  'js/paths-trig.js',
   'js/app.js'
 ];
 

@@ -180,6 +180,24 @@ function eqOptions(form, correct, free, n = 3, extra = []) {
   return { options: [{ eq: correct }, ...chosen.map(v => ({ eq: v }))], correct: 0 };
 }
 
+/* Fertige Aufgabenbausteine, die jede Inhaltsdatei braucht. */
+function matchEqTask(form, values, free, extra = [], view) {
+  const { options, correct } = eqOptions(form, values, free, 3, extra);
+  const task = { type: 'choice', q: 'lp.t.matchEq', form, graph: { form, values }, options, correct, kind: 'graphEq' };
+  if (view) task.view = view;
+  return task;
+}
+function buildTask(form, target, start, free, view) {
+  const task = { type: 'build', q: 'lp.t.build', form, target, start, free };
+  if (view) task.view = view;
+  return task;
+}
+/** Wahr/Falsch. whyIfWrong: Erklaerung fuer die falsch gewaehlte Antwort. */
+function trueFalseTask(q, truth, form, whyIfWrong, explain) {
+  return { type: 'choice', q, form, options: [{ k: 'lp.true' }, { k: 'lp.false' }],
+           correct: truth ? 0 : 1, why: whyIfWrong ? { [truth ? 1 : 0]: whyIfWrong } : {}, explain };
+}
+
 /* ==========================================================================
    3 · FORTSCHRITT
    ========================================================================== */
@@ -275,6 +293,8 @@ const needFor = (n) => Math.ceil(n * PASS_SHARE - 1e-9);
    Sprachwechsel mitten in der Aufgabe Komma und Punkt richtig setzt.
      Zahl                    -> 2,5 bzw. 2.5 mit typografischem Minus
      ['eq', form, values]    -> f(x) = ...
+     ['eqg', form, values]   -> g(x) = ... (zweite Gerade)
+     ['pi', x]               -> x in pi-Schreibweise (pi/2, 3pi/2 ...)
      ['rhs', form, values]   -> nur die rechte Seite
      ['pt', x, y]            -> (x | y)
      ['br', d]               -> (x - d) bzw. (x + d)
@@ -287,6 +307,8 @@ function fmtVar(v) {
   if (typeof v === 'number') return mfmt(v);
   if (Array.isArray(v)) {
     if (v[0] === 'eq') return `f(x) = ${FUNCTIONS[v[1]].rhs(v[2])}`;
+    if (v[0] === 'eqg') return `g(x) = ${FUNCTIONS[v[1]].rhs(v[2])}`;
+    if (v[0] === 'pi') return MFE.math.piLabel(v[1]);
     if (v[0] === 'rhs') return FUNCTIONS[v[1]].rhs(v[2]);
     if (v[0] === 'pt') return `(${mfmt(v[1])} | ${mfmt(v[2])})`;
     if (v[0] === 'br') return MFE.math.bracket(v[1]);
@@ -387,10 +409,21 @@ function buildTasks(step) {
 /* ==========================================================================
    6 · OBERFLAECHE: UEBERSICHT
    ========================================================================== */
-let overviewPath = 'quadratic';
+/* Kostprobe ohne Pro: ein ganzer Pfad und Schritt 1 jedes anderen. Wer nie
+   einen Lernpfad erlebt hat, kauft ihn nicht - und die App-Pruefung sieht in
+   der kostenlosen Fassung mehr als gesperrte Karten. Aendern: nur hier. */
+const FREE_PATHS = new Set(['linear']);
+const FREE_FIRST_STEP = true;
+
+/** Darf dieser Schritt ohne Kauf geoeffnet werden? */
+function stepFree(pid, i) {
+  return licence.has('learnPaths') || FREE_PATHS.has(pid) || (FREE_FIRST_STEP && i === 0);
+}
+/* Zuletzt gewaehlte Klasse; ohne Wahl die erste vorhandene in der
+   Reihenfolge der Startseite (siehe openOverview). */
+let overviewPath = null;
 
 function openOverview(pid) {
-  if (!licence.has('learnPaths')) { host.proHint(); return; }
   if (pid && PATHS[pid]) overviewPath = pid;
   host.showScreen('learn');          // zeichnet ueber onShow()
 }
@@ -398,6 +431,7 @@ function openOverview(pid) {
 function renderOverview() {
   const box = $('#lp-classes');
   if (!box) return;
+  if (!PATHS[overviewPath]) overviewPath = CLASS_ORDER.find(c => PATHS[c]) ?? Object.keys(PATHS)[0];
   box.replaceChildren();
   for (const cat of CLASS_ORDER) {
     const b = document.createElement('button');
@@ -459,7 +493,15 @@ function renderOverview() {
     acts.className = 'lp-step-acts';
     const go = document.createElement('button');
     go.type = 'button';
-    if (state === 'locked') {
+    const free = stepFree(path.id, i);
+    if (!free) {
+      // Gehoert zu Pro: derselbe Knopf, aber mit PRO-Abzeichen und Kaufhinweis.
+      go.className = 'btn-ghost is-locked';
+      go.dataset.act = 'pro';
+      go.textContent = t(state === 'locked' ? 'lp.testOut' : 'lp.open');
+      go.setAttribute('aria-disabled', 'true');
+      go.addEventListener('click', () => host.proHint('path'));
+    } else if (state === 'locked') {
       go.className = 'btn-ghost';
       go.dataset.act = 'test';
       go.textContent = t('lp.testOut');
@@ -476,11 +518,28 @@ function renderOverview() {
     list.append(li);
   });
 
+  // Unterbrochener Schritt (egal in welchem Pfad): Fortsetzen anbieten.
+  const pend = pendingLesson();
+  const resumeBox = $('#lp-resume');
+  if (resumeBox) {
+    resumeBox.hidden = !pend;
+    if (pend) {
+      const ps = PATHS[pend.pid];
+      const st = ps.steps[pend.idx];
+      $('#lp-resume-text').textContent = t('lp.resumeText', {
+        path: t(ps.title), i: pend.idx + 1, title: txt(st.title, st.form),
+        phase: t('lp.phase.' + (pend.mode === 'test' ? 'test' : pend.phase))
+      });
+    }
+  }
+
   const next = nextOpen(path.id, store);
   const cont = $('#btn-lp-continue');
   cont.hidden = next < 0;
   cont.textContent = done === 0 ? t('lp.start') : t('lp.continue');
+  cont.classList.toggle('is-locked', next >= 0 && !stepFree(path.id, next));
   $('#lp-all-done').hidden = done < total;
+  $('#btn-lp-code').disabled = done === 0;
 }
 
 /* ==========================================================================
@@ -506,8 +565,15 @@ const formOf = () => stepOf()?.form;
 function openLesson(pid, idx, mode = 'learn') {
   const path = PATHS[pid];
   if (!path?.steps[idx]) return;
-  if (!licence.has('learnPaths') || (path.feature && !licence.has(path.feature))) { host.proHint(); return; }
-  L.pid = pid; L.idx = idx; L.mode = mode === 'test' ? 'test' : 'learn';
+  if (!stepFree(pid, idx)) { host.proHint('path'); return; }
+  mode = mode === 'test' ? 'test' : 'learn';
+  // Derselbe Schritt war unterbrochen: dort weitermachen statt neu beginnen.
+  const saved = loadLesson();
+  if (saved && saved.pid === pid && saved.idx === idx && saved.mode === mode && restoreLesson(saved)) {
+    host.showScreen('lesson');
+    return;
+  }
+  L.pid = pid; L.idx = idx; L.mode = mode;
   L.guess = -1;
   L.predictOrder = shuffle(path.steps[idx].predict.options.map((_, i) => i));
   resetExplore();
@@ -528,7 +594,7 @@ function resetExplore() {
     bounds: Object.fromEntries(d.params.map(p => [p.id, { min: p.min, max: p.max }])),
     prefix: 'lp-', play: false,
     symbolOf: host.symbolOf,
-    onChange: () => { drawStage(); updateEquation(); },
+    onChange: () => { drawStage(); updateEquation(); saveLesson(); },
     onCommit: onExploreCommit
   };
   L.traceX = step.trace ? step.trace.start ?? step.trace.min : null;
@@ -542,6 +608,7 @@ function resetExplore() {
 function setFeedback(cls, text) {
   L.fb = text ? { cls, text } : null;
   paintFeedback();
+  if (stepOf()) saveLesson();
 }
 function paintFeedback() {
   const el = $('#lesson-feedback');
@@ -561,6 +628,7 @@ function setActions(list) {
     b.className = a.kind === 'secondary' ? 'btn-secondary' : a.kind === 'ghost' ? 'btn-ghost' : 'btn-primary';
     b.dataset.act = a.act;
     b.textContent = a.label;
+    if (a.locked) b.classList.add('is-locked');      // PRO-Abzeichen
     b.addEventListener('click', a.fn);
     row.append(b);
   }
@@ -603,6 +671,7 @@ function renderLesson() {
   else if (L.phase === 'practice') renderTask();
   else if (L.phase === 'result') renderResult();
   paintFeedback();
+  saveLesson();
 }
 
 function para(cls, text, parent = $('#lesson-body')) {
@@ -636,9 +705,13 @@ function renderPredict() {
 }
 
 /* ---------- Phase 2: Entdecken ---------- */
+/** Antworttext ohne Schlusspunkt - er steht in Anfuehrungszeichen mitten im
+ *  Satz, sonst hiesse es „Er ist fallend.“. */
+const unpoint = (s) => s.replace(/[.!]\s*$/, '');
+
 function guessText() {
   const step = stepOf();
-  return L.guess >= 0 ? txt(step.predict.options[L.guess], step.form) : '';
+  return L.guess >= 0 ? unpoint(txt(step.predict.options[L.guess], step.form)) : '';
 }
 
 function renderExplore() {
@@ -701,12 +774,14 @@ function traceRow(tr) {
   const out = document.createElement('output');
   out.className = 'value-input lp-trace-out';
   out.htmlFor = 'lp-trace';
-  const paint = () => { out.textContent = fmt(L.traceX, 2); };
+  // Bei Sinus und Kosinus in pi: 1,57 sagt im Unterricht niemand.
+  const paint = () => { out.textContent = tr.pi ? MFE.math.piLabel(L.traceX) : fmt(L.traceX, 2); };
   paint();
   input.addEventListener('input', () => {
     L.traceX = parseFloat(input.value);
     paint();
     drawStage();
+    saveLesson();
   });
   input.addEventListener('change', onExploreCommit);
   row.append(sym, input, out);
@@ -772,13 +847,14 @@ function onExploreCommit() {
   if (L.mission >= step.missions.length) finishExplore();
   else setFeedback('ok', t('lp.missionDone'));
   exploreActions();
+  saveLesson();
 }
 
 function finishExplore() {
   const step = stepOf();
   if (L.guess < 0) { setFeedback('ok', t('lp.exploreDone')); return; }
   const right = L.guess === step.predict.correct;
-  const r = txt(step.predict.options[step.predict.correct], step.form);
+  const r = unpoint(txt(step.predict.options[step.predict.correct], step.form));
   setFeedback(right ? 'ok' : 'err', right
     ? t('lp.guessRight', { g: guessText() })
     : t('lp.guessWrong', { g: guessText(), r }));
@@ -846,7 +922,7 @@ function prepareTask() {
       values: { ...Object.fromEntries(d.params.map(p => [p.id, p.value])), ...task.start },
       bounds: Object.fromEntries(d.params.map(p => [p.id, { min: p.min, max: p.max }])),
       prefix: 'lp-', play: false, symbolOf: host.symbolOf,
-      onChange: () => { drawStage(); updateEquation(); }
+      onChange: () => { drawStage(); updateEquation(); saveLesson(); }
     };
   }
 }
@@ -903,6 +979,7 @@ function renderTask() {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !L.locked) { e.preventDefault(); checkTask(); }
       });
+      input.addEventListener('input', saveLesson);
       row.append(l, input);
       wrap.append(row);
       return input;
@@ -1058,6 +1135,7 @@ function finishPractice() {
   L.result = { passed, score: L.score, n, need };
   L.phase = 'result';
   L.fb = null;
+  clearLesson();
   renderLesson();
 }
 
@@ -1095,7 +1173,8 @@ function renderResult() {
 
   const acts = [];
   if (r.passed && !last) {
-    acts.push({ act: 'next-step', label: t('lp.nextStep', { i: L.idx + 2 }), fn: () => openLesson(path.id, L.idx + 1, 'learn') });
+    acts.push({ act: 'next-step', label: t('lp.nextStep', { i: L.idx + 2 }), locked: !stepFree(path.id, L.idx + 1),
+                fn: () => openLesson(path.id, L.idx + 1, 'learn') });
   }
   if (!r.passed) acts.push({ act: 'again', label: t('lp.again'), fn: startPractice });
   if (!r.passed && L.mode === 'learn') {
@@ -1126,7 +1205,7 @@ function drawStage() {
       curves: [{ form: step.form, values: L.ctx.values, color: '--graph' }],
       activeIndex: 0,
       view: step.view,
-      opts: { ...BLANK, vertex: !!show.vertex, roots: !!show.roots, yint: !!show.yint,
+      opts: { ...BLANK, vertex: !!show.vertex, roots: !!show.roots, yint: !!show.yint, helpers: !!show.helpers,
               trace: L.traceX != null || show.pointAt != null },
       traceX: L.traceX ?? show.pointAt,
       trail: L.trail.slice(0, -1).map(v => ({ form: step.form, values: v, color: '--graph' })),
@@ -1160,6 +1239,382 @@ function drawStage() {
   if (scene) drawScene(lessonGraph, scene);
 }
 
+
+/* ==========================================================================
+   7b · UNTERBROCHENE SCHRITTE FORTSETZEN
+   --------------------------------------------------------------------------
+   Am Telefon wird die App staendig unterbrochen: Nachricht, Anruf, Wechsel
+   in eine andere App. iOS beendet die WebView im Hintergrund ohne Vorwarnung.
+   Bisher begann der Schritt dann von vorn - fuer Schuelerinnen fuehlt sich
+   das wie eine Strafe an.
+
+   Jetzt wird der Zustand des laufenden Schritts laufend gesichert
+   (mfe:lesson). Beim naechsten Oeffnen geht es an derselben Stelle weiter:
+   gleiche Aufgaben, gleicher Punktestand, gleiche Reglerstellung, sogar der
+   halb getippte Wert im Eingabefeld.
+
+   Was aus dem Speicher kommt, ist fremdes Material (jeder kann den
+   WebView-Speicher veraendern). sanitizeLesson() prueft deshalb jedes Feld;
+   passt etwas nicht, wird der Stand verworfen - lieber von vorn als ein
+   Absturz mitten im Schritt.
+   ========================================================================== */
+const LESSON_KEY = 'mfe:lesson';
+const LESSON_REV = 1;
+const LESSON_MAX_AGE = 14 * 24 * 3600 * 1000;
+const LESSON_PHASES = new Set(['predict', 'explore', 'rule', 'practice']);
+const MAX_STR = 400;
+
+const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+const isInt = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
+const isStr = (s, max = MAX_STR) => typeof s === 'string' && s.length <= max;
+const isKey = (s) => isStr(s, 60) && /^(lp|quiz|btn)\.[\w.]+$/.test(s);
+
+/** Wertesatz einer Form: jeder Parameter eine endliche Zahl in seinen harten
+ *  Grenzen (dieselben Grenzen wie beim Eintippen). */
+function cleanValues(form, raw) {
+  const d = FUNCTIONS[form];
+  if (!d || !isObj(raw)) return null;
+  const out = {};
+  for (const p of d.params) {
+    const v = raw[p.id];
+    if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > 1e4) return null;
+    if (v < (p.hardMin ?? -1e4) || v > (p.hardMax ?? 1e4)) return null;
+    out[p.id] = v;
+  }
+  return out;
+}
+
+/** Variable in einem Text (siehe fmtVar). */
+function cleanVar(v, depth = 0) {
+  if (typeof v === 'number') return Number.isFinite(v);
+  if (typeof v === 'string') return isStr(v, 80);
+  if (!Array.isArray(v) || depth > 1) return false;
+  const [kind, a, b] = v;
+  if (['eq', 'eqg', 'rhs'].includes(kind)) return v.length === 3 && !!cleanValues(a, b);
+  if (kind === 'pt') return v.length === 3 && Number.isFinite(a) && Number.isFinite(b);
+  if (kind === 'pi' || kind === 'br') return v.length === 2 && Number.isFinite(a);
+  if (kind === 't') return v.length === 2 && isKey(a);
+  return false;
+}
+/** Textangabe: Schluessel oder [Schluessel, Variablen]. */
+function cleanSpec(spec) {
+  if (isKey(spec)) return true;
+  if (!Array.isArray(spec) || spec.length !== 2 || !isKey(spec[0]) || !isObj(spec[1])) return false;
+  const vars = Object.entries(spec[1]);
+  return vars.length <= 12 && vars.every(([k, v]) => /^\w{1,12}$/.test(k) && cleanVar(v));
+}
+
+function cleanTask(t0, stepForm) {
+  if (!isObj(t0) || !TASK_TYPES.has(t0.type) || !cleanSpec(t0.q)) return false;
+  if (t0.form != null && !FUNCTIONS[t0.form]) return false;
+  if (t0.graph != null && !(isObj(t0.graph) && cleanValues(t0.graph.form, t0.graph.values))) return false;
+  if (t0.ref != null && !(isObj(t0.ref) && cleanValues(t0.ref.form, t0.ref.values))) return false;
+  if (t0.view != null && !(isObj(t0.view) && ['xMin', 'xMax', 'yMin', 'yMax'].every(k => Number.isFinite(t0.view[k])))) return false;
+  for (const k of ['explain', 'solution']) if (t0[k] != null && !cleanSpec(t0[k])) return false;
+  if (t0.why != null && !(isObj(t0.why) && Object.values(t0.why).every(cleanSpec))) return false;
+  if (t0.remedy != null && !(isObj(t0.remedy) && Object.values(t0.remedy).every(c => isStr(c, 30)))) return false;
+  if (t0.concept != null && !isStr(t0.concept, 30)) return false;
+  const form = t0.form ?? t0.graph?.form ?? stepForm;
+  if (t0.type === 'choice') {
+    if (!Array.isArray(t0.options) || t0.options.length < 2 || t0.options.length > 6) return false;
+    if (!isInt(t0.correct, 0, t0.options.length - 1)) return false;
+    return t0.options.every(o => isObj(o) && (
+      (o.eq != null && !!cleanValues(o.form ?? form, o.eq) && (o.form == null || !!FUNCTIONS[o.form])) ||
+      (o.text != null && isStr(o.text, 40)) ||
+      (o.k != null && isKey(o.k) && (o.v == null || cleanSpec([o.k, o.v])))));
+  }
+  if (t0.type === 'input') {
+    return Array.isArray(t0.answers) && t0.answers.length >= 1 && t0.answers.length <= 4
+      && t0.answers.every(Number.isFinite) && Array.isArray(t0.fields)
+      && t0.fields.length === t0.answers.length
+      && t0.fields.every(f => isStr(f, 20) || cleanSpec(f));
+  }
+  // build
+  const d = FUNCTIONS[t0.form];
+  return !!d && !!cleanValues(t0.form, t0.target) && !!cleanValues(t0.form, t0.start)
+    && Array.isArray(t0.free) && t0.free.length >= 1
+    && t0.free.every(id => d.params.some(p => p.id === id));
+}
+
+/** Gesicherten Stand pruefen. Rueckgabe: bereinigter Stand oder null. */
+function sanitizeLesson(raw, now = Date.now()) {
+  if (!isObj(raw) || raw.rev !== LESSON_REV) return null;
+  if (!Number.isFinite(raw.at) || now - raw.at > LESSON_MAX_AGE || raw.at > now + 60000) return null;
+  const path = PATHS[raw.pid];
+  const step = path?.steps[raw.idx];
+  if (!step || !isInt(raw.idx, 0, path.steps.length - 1)) return null;
+  if (!['learn', 'test'].includes(raw.mode) || !LESSON_PHASES.has(raw.phase)) return null;
+  if (raw.mode === 'test' && raw.phase !== 'practice') return null;
+  const nOpt = step.predict.options.length;
+  const perm = (a, n) => Array.isArray(a) && a.length === n && [...a].sort((x, y) => x - y).every((v, i) => v === i);
+
+  const out = {
+    pid: raw.pid, idx: raw.idx, mode: raw.mode, phase: raw.phase,
+    open: raw.open === true,
+    guess: isInt(raw.guess, -1, nOpt - 1) ? raw.guess : -1,
+    predictOrder: perm(raw.predictOrder, nOpt) ? raw.predictOrder.slice() : null,
+    values: cleanValues(step.form, raw.values),
+    traceX: null,
+    memo: {},
+    mission: isInt(raw.mission, 0, step.missions.length) ? raw.mission : 0,
+    trail: []
+  };
+  if (!out.values) return null;
+  if (step.trace) {
+    const x = raw.traceX;
+    out.traceX = Number.isFinite(x) && x >= step.trace.min - 1e-9 && x <= step.trace.max + 1e-9 ? x : (step.trace.start ?? step.trace.min);
+  }
+  if (isObj(raw.memo)) {
+    for (const [k, v] of Object.entries(raw.memo).slice(0, 8)) {
+      if (/^\w{1,12}$/.test(k) && k !== '__proto__' && Number.isFinite(v)) out.memo[k] = v;
+    }
+  }
+  if (Array.isArray(raw.trail)) {
+    out.trail = raw.trail.slice(-TRAIL_MAX).map(v => cleanValues(step.form, v)).filter(Boolean);
+  }
+  if (raw.phase !== 'practice') return out;
+
+  // Uebungsrunde
+  const tasks = raw.tasks;
+  if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > 20) return null;
+  if (!tasks.every(t0 => cleanTask(t0, step.form))) return null;
+  if (!isInt(raw.ti, 0, tasks.length - 1)) return null;
+  const task = tasks[raw.ti];
+  const marks = Array.isArray(raw.marks) ? raw.marks.slice(0, raw.ti + 1) : [];
+  if (!marks.every(m => m === true || m === false || m === 'half' || m == null)) return null;
+  // Der Punktestand wird aus den Markierungen neu berechnet, nicht uebernommen.
+  const score = marks.reduce((a, m) => a + markPoints(m), 0);
+  const nOptT = task.type === 'choice' ? task.options.length : 0;
+  Object.assign(out, {
+    tasks: tasks.map(t0 => JSON.parse(JSON.stringify(t0))),
+    ti: raw.ti, marks, score,
+    remedies: Array.isArray(raw.remedies) ? raw.remedies.filter(i => isInt(i, 0, raw.idx - 1)) : [],
+    attempt: raw.attempt === 1 ? 1 : 0,
+    locked: raw.locked === true && marks[raw.ti] != null,
+    order: task.type === 'choice' ? (perm(raw.order, nOptT) ? raw.order.slice() : null) : [],
+    tried: Array.isArray(raw.tried) ? raw.tried.filter(i => isInt(i, 0, nOptT - 1)) : [],
+    wrongValues: task.graph && raw.wrongValues ? cleanValues(task.graph.form, raw.wrongValues) : null,
+    taskValues: task.type === 'build' ? cleanValues(task.form, raw.taskValues) : null,
+    inputs: task.type === 'input' && Array.isArray(raw.inputs)
+      ? raw.inputs.slice(0, task.answers.length).map(v => (isStr(v, 40) ? v : '')) : null,
+    fb: isObj(raw.fb) && ['', 'ok', 'err'].includes(raw.fb.cls) && isStr(raw.fb.text, 1200) ? { cls: raw.fb.cls, text: raw.fb.text } : null
+  });
+  if (out.order === null) return null;
+  // Eine abgeschlossene Aufgabe ohne Markierung waere nicht bewertet worden.
+  if (out.locked && marks[raw.ti] == null) out.locked = false;
+  return out;
+}
+
+/** Aktuellen Stand als reines Datenobjekt. */
+function snapshotLesson(open) {
+  if (!stepOf() || L.phase === 'result') return null;
+  const snap = {
+    rev: LESSON_REV, at: Date.now(), open: !!open,
+    pid: L.pid, idx: L.idx, mode: L.mode, phase: L.phase,
+    guess: L.guess, predictOrder: L.predictOrder,
+    values: { ...L.ctx.values }, traceX: L.traceX, memo: { ...L.memo },
+    mission: L.mission, trail: L.trail
+  };
+  if (L.phase === 'practice') {
+    Object.assign(snap, {
+      tasks: L.tasks, ti: L.ti, marks: L.marks, remedies: [...L.remedies],
+      attempt: L.attempt, locked: L.locked, order: L.order, tried: [...L.tried],
+      wrongValues: L.wrongValues, taskValues: L.taskCtx ? { ...L.taskCtx.values } : null,
+      inputs: L.inputs ? L.inputs.map(i => String(i.value ?? '')) : null,
+      fb: L.fb && typeof L.fb.text === 'string' ? { cls: L.fb.cls || '', text: L.fb.text } : null
+    });
+  }
+  return snap;
+}
+
+let lessonOpen = false;
+let saveTimer = 0;
+function saveLessonNow() {
+  clearTimeout(saveTimer);
+  const snap = snapshotLesson(lessonOpen);
+  try {
+    if (snap) localStorage.setItem(LESSON_KEY, JSON.stringify(snap));
+    else localStorage.removeItem(LESSON_KEY);
+  } catch { /* Speicher voll oder privater Modus: dann eben ohne Fortsetzen */ }
+}
+/** Sichern, aber nicht bei jeder Reglerbewegung sofort. */
+function saveLesson() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveLessonNow, 250);
+}
+function clearLesson() {
+  clearTimeout(saveTimer);
+  try { localStorage.removeItem(LESSON_KEY); } catch {}
+}
+function loadLesson() {
+  try { return sanitizeLesson(JSON.parse(localStorage.getItem(LESSON_KEY) || 'null')); }
+  catch { return null; }
+}
+
+/** Gesicherten Stand in L uebernehmen. Rueckgabe: hat es geklappt? */
+function restoreLesson(st) {
+  if (!st || !stepFree(st.pid, st.idx)) return false;
+  L.pid = st.pid; L.idx = st.idx; L.mode = st.mode;
+  L.guess = st.guess;
+  L.predictOrder = st.predictOrder ?? shuffle(stepOf().predict.options.map((_, i) => i));
+  resetExplore();
+  L.ctx.values = { ...st.values };
+  L.traceX = st.traceX;
+  L.memo = { ...st.memo };
+  L.mission = st.mission;
+  L.trail = st.trail.map(v => ({ ...v }));
+  L.result = null;
+  L.phase = st.phase;
+  if (st.phase === 'practice') {
+    L.tasks = st.tasks; L.ti = st.ti; L.marks = st.marks; L.score = st.score;
+    L.remedies = new Set(st.remedies);
+    prepareTask();
+    L.attempt = st.attempt; L.locked = st.locked;
+    L.order = st.order; L.tried = new Set(st.tried); L.wrongValues = st.wrongValues;
+    if (L.taskCtx && st.taskValues) L.taskCtx.values = { ...st.taskValues };
+    L.inputs = st.inputs ? st.inputs.map(value => ({ value })) : null;
+    L.fb = st.fb;
+  }
+  return true;
+}
+
+/** Fuer die Uebersicht: gibt es einen unterbrochenen Schritt? */
+function pendingLesson() {
+  const st = loadLesson();
+  return st && stepFree(st.pid, st.idx) ? st : null;
+}
+
+/** App-Start: War die App mitten in einem Schritt, als sie beendet wurde,
+ *  geht es direkt dort weiter. Rueckgabe: wurde fortgesetzt? */
+function resumeOnStart() {
+  const st = pendingLesson();
+  if (!st?.open) return false;
+  return resumePending();
+}
+function resumePending() {
+  const st = pendingLesson();
+  if (!st || !restoreLesson(st)) { clearLesson(); return false; }
+  host.showScreen('lesson');
+  return true;
+}
+
+
+/* ==========================================================================
+   7c · ERGEBNISCODE FUER DIE LEHRKRAFT
+   --------------------------------------------------------------------------
+   Wie beim Wettkampf: kein Server, kein Konto. Die Schuelerin zeigt einen
+   kurzen Code (oder laesst den QR-Code abscannen); die Lehrkraft gibt ihn in
+   der eigenen App unter "Code pruefen" ein und sieht, welche Schritte
+   geschafft sind.
+
+   Aufbau (37 Bit, Basis 36):  Pfad (2) | geschafft (8) | per Test (8) |
+                               Punkte in Halben (7) | Tag seit 1.1.2026 (12)
+   Geschrieben als  Q-XXXX-XXXX-P  - der Buchstabe vorn nennt die Klasse,
+   P ist eine Pruefziffer gegen Tippfehler. Faelschungssicher ist das nicht
+   (die App liegt offen auf dem Geraet) und soll es nicht sein: es ist ein
+   Lernnachweis, keine Pruefung.
+   ========================================================================== */
+const CODE_PATHS = ['linear', 'quadratic', 'exponential', 'trig'];
+const CODE_LETTER = { linear: 'L', quadratic: 'Q', exponential: 'E', trig: 'T' };
+const DAY0 = Date.UTC(2026, 0, 1);
+const DAY_MS = 24 * 3600 * 1000;
+
+/* Luhn mod 36: erkennt jeden einzelnen vertippten Buchstaben und fast jeden
+   Dreher zweier Nachbarn - die typischen Fehler beim Abtippen von der Tafel. */
+function checkChar(body) {
+  let sum = 0, factor = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    let add = parseInt(body[i], 36) * factor;
+    add = Math.floor(add / 36) + (add % 36);
+    sum += add;
+    factor = factor === 2 ? 1 : 2;
+  }
+  return ((36 - (sum % 36)) % 36).toString(36).toUpperCase();
+}
+
+/** Stand eines Pfades als Ergebnis. null, wenn noch nichts geschafft ist. */
+function pathResult(pid, store = loadStore(), now = Date.now()) {
+  const path = PATHS[pid];
+  if (!path || !CODE_PATHS.includes(pid)) return null;
+  const entry = store[pid] ?? {};
+  const done = [], skipped = [];
+  let halves = 0;
+  path.steps.forEach((s, i) => {
+    const e = entry[s.id];
+    if (e?.s === 'done') { done.push(i); halves += Math.round(e.best * 2); }
+    if (e?.s === 'skipped') skipped.push(i);
+  });
+  if (!done.length && !skipped.length) return null;
+  const day = Math.max(0, Math.min(4095, Math.floor((now - DAY0) / DAY_MS)));
+  return { pid, done, skipped, points: Math.min(halves, 127) / 2, day, total: path.steps.length };
+}
+
+function encodeResult(r) {
+  const mask = (list) => list.reduce((m, i) => m | (1 << i), 0);
+  const value = ((((CODE_PATHS.indexOf(r.pid) * 256 + mask(r.done)) * 256 + mask(r.skipped)) * 128
+                + Math.round(r.points * 2)) * 4096) + r.day;
+  const body = value.toString(36).toUpperCase().padStart(8, '0');
+  return `${CODE_LETTER[r.pid]}-${body.slice(0, 4)}-${body.slice(4)}-${checkChar(CODE_LETTER[r.pid] + body)}`;
+}
+
+/** Code -> Ergebnis oder null (Tippfehler, fremder Code). Grossschreibung,
+ *  Leerzeichen und fehlende Bindestriche sind egal - abgetippt wird von Hand. */
+function decodeResult(raw) {
+  const s = String(raw ?? '').toUpperCase().replace(/[\s‐-―-]/g, '');
+  const m = s.match(/^([LQET])([0-9A-Z]{8})([0-9A-Z])$/);
+  if (!m) return null;
+  const [, letter, body, check] = m;
+  if (checkChar(letter + body) !== check) return null;
+  let v = parseInt(body, 36);
+  if (!Number.isSafeInteger(v)) return null;
+  const day = v % 4096; v = Math.floor(v / 4096);
+  const halves = v % 128; v = Math.floor(v / 128);
+  const skipM = v % 256; v = Math.floor(v / 256);
+  const doneM = v % 256; v = Math.floor(v / 256);
+  const pid = CODE_PATHS[v];
+  if (!pid || CODE_LETTER[pid] !== letter || !PATHS[pid]) return null;
+  const n = PATHS[pid].steps.length;
+  const bits = (mask) => [...Array(8).keys()].filter(i => mask & (1 << i));
+  const done = bits(doneM), skipped = bits(skipM);
+  // Schritte, die es nicht gibt, oder beides zugleich: kein echter Code.
+  if (done.some(i => i >= n) || skipped.some(i => i >= n) || done.some(i => skipped.includes(i))) return null;
+  if (!done.length && !skipped.length) return null;
+  return { pid, done, skipped, points: halves / 2, day, total: n };
+}
+
+const dateOf = (day) => new Date(DAY0 + day * DAY_MS).toLocaleDateString(MFE.i18n.lang === 'de' ? 'de-DE' : 'en-GB',
+  { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+
+function resultSummary(r) {
+  const skip = r.skipped.length ? t('lp.code.skip', { k: r.skipped.length }) : '';
+  return t('lp.code.summary', { path: t(PATHS[r.pid].title), n: r.done.length + r.skipped.length, m: r.total,
+                                skip, p: fmt(r.points, 1), date: dateOf(r.day) });
+}
+
+function showResultCode() {
+  const r = pathResult(overviewPath);
+  if (!r) { toast(t('lp.code.none')); return; }
+  const code = encodeResult(r);
+  const text = `${resultSummary(r)} [${code}]`;
+  $('#lp-code').textContent = code;
+  $('#lp-code-summary').textContent = resultSummary(r);
+  const dlg = $('#lp-code-dialog');
+  if (!dlg?.showModal) { toast(text); return; }
+  dlg.dataset.text = text;
+  if (!MFE.nav.openDialog(dlg)) return;
+  requestAnimationFrame(() => MFE.qr?.draw($('#lp-code-qr'), text, { ec: 'M', dark: '#000000', light: '#ffffff' }));
+}
+
+function checkResultCode() {
+  const out = $('#lp-check-out');
+  const r = decodeResult($('#lp-check-input').value);
+  if (!r) { out.className = 'feedback err'; out.textContent = t('lp.check.bad'); return; }
+  const name = (i) => `${i + 1}`;
+  out.className = 'feedback ok';
+  out.textContent = `${resultSummary(r)} ${t('lp.check.steps', {
+    done: r.done.map(name).join(', ') || '–', skip: r.skipped.map(name).join(', ') || '–' })}`;
+}
+
 /* ==========================================================================
    8 · ANBINDUNG
    ========================================================================== */
@@ -1167,8 +1622,17 @@ function onShow(which) {
   if (which === 'learn') renderOverview();
   if (which === 'lesson') {
     if (!stepOf()) { openOverview(); return; }
+    lessonOpen = true;
     renderLesson();
   }
+}
+
+/** Jeder Bildschirmwechsel (app.js). Verlaesst die Nutzerin den Schritt
+ *  selbst, ist er nicht mehr "offen" - beim naechsten Start geht es dann
+ *  nicht automatisch hinein, nur die Uebersicht bietet das Fortsetzen an. */
+function onScreen(which) {
+  if (which === 'lesson') return;
+  if (lessonOpen) { lessonOpen = false; saveLessonNow(); }
 }
 
 function relabel() {
@@ -1187,6 +1651,19 @@ function init(hooks) {
     const i = nextOpen(overviewPath);
     if (i >= 0) openLesson(overviewPath, i, 'learn');
   });
+  $('#btn-lp-resume')?.addEventListener('click', () => { if (!resumePending()) renderOverview(); });
+  $('#btn-lp-code')?.addEventListener('click', showResultCode);
+  $('#btn-lp-code-close')?.addEventListener('click', () => $('#lp-code-dialog').close());
+  $('#btn-lp-code-copy')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('#lp-code-dialog').dataset.text || ''); toast(t('msg.copied')); }
+    catch { toast($('#lp-code-dialog').dataset.text || ''); }
+  });
+  $('#btn-lp-check')?.addEventListener('click', checkResultCode);
+  $('#lp-check-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); checkResultCode(); } });
+  $('#btn-lp-discard')?.addEventListener('click', () => { clearLesson(); renderOverview(); });
+  // Beim Wegschalten der App sofort sichern - danach kann iOS sie beenden.
+  document.addEventListener('visibilitychange', () => { if (document.hidden && stepOf()) saveLessonNow(); });
+  addEventListener('pagehide', () => { if (stepOf()) saveLessonNow(); });
   $('#btn-lp-reset')?.addEventListener('click', () => {
     if (!confirm(t('lp.resetConfirm'))) return;
     resetPath(overviewPath);
@@ -1196,13 +1673,15 @@ function init(hooks) {
 }
 
 return {
-  init, register, openOverview, openLesson, onShow, relabel, redraw,
+  init, register, openOverview, openLesson, onShow, onScreen, relabel, redraw, resumeOnStart,
   /* Baukasten fuer die Inhaltsdateien */
-  kit: { pick, shuffle, near, round4, eqOptions, variants, sameCurve },
+  kit: { pick, shuffle, near, round4, eqOptions, variants, sameCurve, matchEqTask, buildTask, trueFalseTask },
   /* Fuer tools/paths-test.mjs und tools/smoke.mjs */
-  core: { sanitizeStore, loadStore, saveStore, stepState, recordPass, resetPath,
+  core: { sanitizeStore, loadStore, saveStore, stepState, recordPass, resetPath, stepFree,
           countPassed, nextOpen, needFor, gradeInput, gradeBuild, markPoints,
-          remedyStep, buildTasks, optionText, txt, fmtVar, STORE_KEY, PASS_SHARE },
+          remedyStep, buildTasks, optionText, txt, fmtVar, STORE_KEY, PASS_SHARE,
+          sanitizeLesson, snapshotLesson, saveLessonNow, LESSON_KEY,
+          pathResult, encodeResult, decodeResult, resultSummary },
   get paths() { return PATHS; },
   get lesson() {
     return { pid: L.pid, idx: L.idx, mode: L.mode, phase: L.phase, mission: L.mission, memo: { ...L.memo },

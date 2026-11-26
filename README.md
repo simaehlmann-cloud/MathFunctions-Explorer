@@ -18,6 +18,48 @@ funktioniert auch (`file://`), nur ohne Service Worker.
 
 ---
 
+## 7.4.0 – Vor dem App Store: Schnupperpfad, Fortsetzen, Ergebniscode
+
+- **Kostenlos ausprobieren:** Der Lernpfad zu linearen Funktionen ist ganz frei,
+  von jedem anderen Pfad der erste Schritt (`FREE_PATHS`, `FREE_FIRST_STEP` in
+  `js/paths.js`). Gesperrte Schritte tragen das PRO-Abzeichen und öffnen den
+  Kauf-Dialog.
+- **Fortsetzen:** Ein unterbrochener Schritt (Phase, Reglerwerte, Aufträge,
+  Übungsrunde samt Punkten) wird unter `mfe:lesson` gesichert, beim Öffnen
+  streng geprüft (`sanitizeLesson`) und bis zu 14 Tage angeboten.
+- **Ergebnis für die Lehrkraft:** Knopf in der Übersicht zeigt einen Code wie
+  `Q-0G7S-C954-0` samt QR-Code (Pfad, geschaffte und übersprungene Schritte,
+  Punkte, Datum; Luhn-mod-36-Prüfziffer gegen Tippfehler). Unter „Für
+  Lehrkräfte: Ergebniscode prüfen“ entschlüsselt die App ihn wieder. Kein
+  Server – und bewusst kein Fälschungsschutz, es ist ein Lernnachweis.
+- **π-Einrasten:** Verschiebung c bei Sinus und Tangens rastet auf π/4-Vielfachen
+  ein, das Zahlenfeld zeigt dann π/2 statt 1,5708. Sinus-Steckbrief: `T = π`.
+- **CSP:** `frame-ancestors` aus dem meta-Tag entfernt (wird dort ignoriert und
+  erzeugte eine Konsolenwarnung).
+- Tests: `paths-test` prüft alle 3ⁿ Kombinationen je Pfad im Roundtrip und
+  jeden einzelnen Tippfehler; `smoke` spielt Code-Dialog und Prüffeld durch.
+
+## 7.3.0 – Lernpfade für alle vier Hauptklassen
+
+Neben den quadratischen Funktionen gibt es jetzt Lernpfade für
+**lineare Funktionen** (6 Schritte: proportionale Funktion und Steigung,
+y-Achsenabschnitt, m·x + b, Gleichung aus zwei Punkten, Nullstellen, zwei
+Geraden), **Exponentialfunktionen** (4 Schritte: bˣ, Anfangswert, Wachstum und
+Abnahme in Prozent, Verschiebung und Asymptote) und **trigonometrische
+Funktionen** (6 Schritte: sin(x), Amplitude, Periode, Verschiebung in x und y,
+alles zusammen; Achse und x-Regler in π).
+
+Die Übersicht öffnet mit der Klasse, die zuletzt im Explorer offen war.
+Neu in der Engine: π-Schreibweise in Aufgaben, g(x) als zweite Gerade,
+Hilfslinien im Entdecken (Steigungsdreieck, Asymptote, Mittellinie).
+
+`npm run paths` prüft jetzt alle vier Pfade: 24 Schritte, 73 Aufträge (bei vier
+freien Reglern über 14 Mio. Rasterstellen), 48 000 erzeugte Aufgaben, jede
+Aufgabenart unabhängig nachgerechnet. `smoke.mjs` spielt alle 24 Schritte über
+die Oberfläche durch.
+
+---
+
 ## 7.2.0 – Lernpfade zum selbstständigen Lernen (Pro)
 
 Neue Karte „Lernpfade“ auf der Startseite. Ein Lernpfad führt Schritt für

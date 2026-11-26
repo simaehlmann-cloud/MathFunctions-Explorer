@@ -14,7 +14,7 @@
 window.MFE = window.MFE || {};
 
 MFE.ui = (() => {
-const { clamp, fmt, parseLoose, FUNCTIONS } = MFE.math;
+const { clamp, fmt, parseLoose, piLabel, FUNCTIONS } = MFE.math;
 const t = (k, v) => MFE.i18n.t(k, v);
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -59,11 +59,29 @@ function fieldEl(ctx, id)  { return $(`#${cssId(ctx.prefix + 'val-' + id)}`); }
 let snapEnabled = true;
 const setSnap = (on) => { snapEnabled = !!on; };
 
+/* pi-Vielfache fuer Verschiebungen bei Sinus und Tangens (snapPi im Katalog).
+   Der Regler hat die Schrittweite 0,1 und trifft pi/2 nie - am Telefon war
+   die Verschiebung um pi/2 damit praktisch nicht einstellbar. */
+const PI_STEP = Math.PI / 12;
+/** Liegt v so nah an einem Vielfachen von pi/12, dass es eines sein soll?
+ *  Dann das exakte Vielfache, sonst null. */
+function exactPi(v) {
+  const k = Math.round(v / PI_STEP);
+  return k !== 0 && Math.abs(v - k * PI_STEP) < 2e-4 ? k * PI_STEP : null;
+}
+/** Anzeige im Zahlenfeld: pi-Schreibweise, wo der Parameter sie traegt. */
+function fieldText(p, v) {
+  if (p?.snapPi && exactPi(v) !== null) return piLabel(v);
+  return fmt(v, 4);
+}
+
 let lastSnapValue = null;
 function snapValue(p, v) {
   if (!snapEnabled) return v;
   // Kandidaten: ganze Zahlen, Halbe, dazu 0 und die Parametergrenzen.
   const cands = [Math.round(v), Math.round(v * 2) / 2, 0];
+  // Bei Verschiebungen im Bogenmass zusaetzlich die Viertel von pi.
+  if (p.snapPi) cands.push(Math.round(v / (Math.PI / 4)) * (Math.PI / 4));
   const width = Math.abs((p.hardMax ?? p.max) - (p.hardMin ?? p.min)) || 1;
   const tol = Math.max(p.step * 0.45, width * 0.004);
   let best = v, bestD = Infinity;
@@ -88,12 +106,15 @@ function setValue(ctx, id, value, { snap = false } = {}) {
   const b = ctx.bounds[id];
   let v = clamp(Number.isFinite(value) ? value : p.value, b.min, b.max);
   if (snap) v = clamp(snapValue(p, v), b.min, b.max);
-  ctx.values[id] = Math.round(v * 1e4) / 1e4;
+  // pi-Vielfache exakt lassen: auf 4 Stellen gerundet waere pi/2 = 1,5708
+  // nicht mehr als pi/2 erkennbar (Anzeige, Pruefung im Lernpfad).
+  const exact = p.snapPi ? exactPi(v) : null;
+  ctx.values[id] = exact ?? Math.round(v * 1e4) / 1e4;
 
   const slider = sliderEl(ctx, id);
   if (slider && parseFloat(slider.value) !== ctx.values[id]) slider.value = ctx.values[id];
   const field = fieldEl(ctx, id);
-  if (field && document.activeElement !== field) field.value = fmt(ctx.values[id], 4);
+  if (field && document.activeElement !== field) field.value = fieldText(p, ctx.values[id]);
 
   ctx.onChange?.();
 }
@@ -116,7 +137,7 @@ function commitTyped(ctx, id) {
   const v = parseLoose(field.value, NaN);
   if (!Number.isFinite(v)) {
     field.classList.add('is-invalid');
-    field.value = fmt(ctx.values[id], 4);
+    field.value = fieldText(p, ctx.values[id]);
     toast(t('msg.numFormat'));
     return;
   }
@@ -125,7 +146,7 @@ function commitTyped(ctx, id) {
   if (hard !== v) toast(t('msg.hardLimit'));
   widenBounds(ctx, id, hard);
   setValue(ctx, id, hard);
-  field.value = fmt(ctx.values[id], 4);
+  field.value = fieldText(p, ctx.values[id]);
   ctx.onCommit?.();
 }
 
@@ -188,7 +209,7 @@ function renderSliderGroup(container, ctx) {
     field.inputMode = 'decimal';
     field.className = 'value-input';
     field.id = ctx.prefix + 'val-' + p.id;
-    field.value = fmt(ctx.values[p.id], 4);
+    field.value = fieldText(p, ctx.values[p.id]);
     field.autocomplete = 'off';
     field.setAttribute('aria-label', `${symOf(ctx, p)} ${t('a11y.valueField')}`);
     field.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); field.blur(); } });
@@ -220,7 +241,7 @@ function syncSliderGroup(ctx) {
     const b = ctx.bounds[p.id];
     if (s) { s.min = b.min; s.max = b.max; s.value = ctx.values[p.id]; }
     const f = fieldEl(ctx, p.id);
-    if (f && document.activeElement !== f) f.value = fmt(ctx.values[p.id], 4);
+    if (f && document.activeElement !== f) f.value = fieldText(p, ctx.values[p.id]);
   }
 }
 
@@ -314,7 +335,7 @@ function setMath(el, text) {
   el.replaceChildren(shown, spoken);
 }
 
-return { $, $$, debounce, toast, cssId, renderSliderGroup, syncSliderGroup,
+return { $, $$, debounce, toast, cssId, renderSliderGroup, syncSliderGroup, exactPi,
          setValue, widenBounds, commitTyped, setSnap, setMath,
          publicBase, saveFile, canPrint, WEB_URL };
 })();
